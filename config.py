@@ -1,0 +1,4 @@
+DATABASE_ADDRESS = "165.132.107.7"
+SVC_YAML_FOLDER = "./svc_yaml"
+SAVE_FOLDER = "model_save_test"
+BEST_SAVE = SAVE_FOLDER + "/best"
