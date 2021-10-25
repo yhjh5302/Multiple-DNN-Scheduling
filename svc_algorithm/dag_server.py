@@ -4,7 +4,7 @@ import math
 import numpy as np
 
 
-COMP_RATIO = 50*(10**6) # computation per input data (50 MFLOPS)
+COMP_RATIO = 100*(10**6) # computation per input data (50 MFLOPS)
 MEM_RATIO = 1024 # memory usage per input data (1 KB)
 
 
@@ -82,14 +82,15 @@ class SystemManager():
             for container in svc.partitions:
                 self.container_arrival[container.id] = self.service_arrival[timeslot][svc.id]
 
-    def get_next_state(self, action):
-        self.set_y_mat(action)
-        next_state = np.array(self.container_arrival) # container arrival
-        next_state = np.append(next_state, [c.computation_amount for c in self.service_set.container_set]) # container computation amount
-        next_state = np.append(next_state, [c.memory for c in self.service_set.container_set]) # container memory
-        next_state = np.append(next_state, [self.cpu_resource[s_id] - s.used_cpu for s_id, s in self.server.items()]) # server cpu
-        next_state = np.append(next_state, [self.mem_resource[s_id] - s.used_mem for s_id, s in self.server.items()]) # server memory
-        next_state = np.append(next_state, [s.get_energy() - s.energy_consumption() for s in self.server.values()]) # server energy
+    def get_next_state(self, mat_y):
+        self.set_y_mat(mat_y)
+        next_state = np.append(self._y, self._x / (10**12))
+        next_state = np.append(next_state, self.container_arrival / 50) # container arrival
+        next_state = np.append(next_state, np.array([c.computation_amount for c in self.service_set.container_set]) / (10**12)) # container computation amount
+        next_state = np.append(next_state, np.array([c.memory for c in self.service_set.container_set]) / (1024 * 1024)) # container memory
+        next_state = np.append(next_state, np.array([self.cpu_resource[s_id] - s.used_cpu for s_id, s in self.server.items()]) / (10**12)) # server cpu
+        next_state = np.append(next_state, np.array([self.mem_resource[s_id] - s.used_mem for s_id, s in self.server.items()]) / (1024 * 1024)) # server memory
+        next_state = np.append(next_state, np.array([s.get_energy() - s.energy_consumption() for s in self.server.values()]) / 100) # server energy
         return next_state
 
     def total_time(self):  # use  todo: add transmission
@@ -197,7 +198,7 @@ class Container:
             T_cp = float("inf")
         # cloud disadvantage
         if self._y is system_manager.cloud_id:
-            T_cp *= 10
+            T_cp *= 100
         return T_cp
 
     def get_transmission_time(self, system_manager, net_manager): # for state

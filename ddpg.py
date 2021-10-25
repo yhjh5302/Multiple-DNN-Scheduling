@@ -27,11 +27,11 @@ class DDPG(object):
         self.num_actions = num_actions
 
         # Create Actor and Critic Network
-        net_cfg = {'hidden1':args.hidden1, 'hidden2':args.hidden2, 'hidden3':args.hidden3, 'hidden4':args.hidden4, 'hidden5':args.hidden5, 'hidden6':args.hidden6, 'init_w':args.init_w}
+        net_cfg = {'hidden':args.hidden, 'init_w':args.init_w}
 
-        self.actor = Actor(self.num_states, self.num_containers, **net_cfg)
-        self.actor_perturbed = Actor(self.num_states, self.num_containers, **net_cfg) # for parameter noise
-        self.actor_target = Actor(self.num_states, self.num_containers, **net_cfg)
+        self.actor = Actor(self.num_states, self.num_containers, self.num_servers, **net_cfg)
+        self.actor_perturbed = Actor(self.num_states, self.num_containers, self.num_servers, **net_cfg) # for parameter noise
+        self.actor_target = Actor(self.num_states, self.num_containers, self.num_servers, **net_cfg)
         self.actor_optim  = Adam(self.actor.parameters(), lr=args.policy_learning_rate)
 
         self.critic = Critic(self.num_states, self.num_actions, **net_cfg)
@@ -67,7 +67,7 @@ class DDPG(object):
 
         # Prepare for the target q batch
         next_action_batch = self.actor_target(to_tensor(next_state_batch))
-        next_action_batch, _, _ = self.env.action_batch_convert(next_action_batch, self.batch_size)
+        next_action_batch, _, _ = self.env.action_batch_convert(next_state_batch,next_action_batch, self.batch_size)
         target_q1_batch, target_q2_batch = self.critic_target([to_tensor(next_state_batch), to_tensor(next_action_batch)])
         target_q_batch = torch.min(target_q1_batch, target_q2_batch)
         target_q_batch = to_tensor(reward_batch) + self.discount * to_tensor(terminal_batch.astype(np.float)) * target_q_batch
@@ -87,8 +87,7 @@ class DDPG(object):
             self.actor.zero_grad()
 
             action_batch = self.actor(to_tensor(state_batch))
-            action_batch, logprob, entropy = self.env.action_batch_convert(action_batch, self.batch_size)
-            policy_loss = -self.critic.Q1([to_tensor(state_batch), to_tensor(action_batch)])
+            action_batch, logprob, entropy = self.env.action_batch_convert(state_batch, action_batch, self.batch_size)
             q_batch = self.critic.Q1([to_tensor(state_batch), to_tensor(action_batch)])
             policy_loss = torch.mean(-logprob * q_batch) - torch.mean(entropy) * 0.001
 
@@ -122,22 +121,19 @@ class DDPG(object):
             self.s_t = s_t1
 
     def random_action(self, state):
-        container_action = to_tensor(np.random.uniform(low=0.0, high=1.0, size=self.num_containers))
-        server_action = to_tensor(np.random.uniform(low=0.0, high=1.0, size=self.num_containers))
-        action = self.env.action_convert(container_action, server_action)
+        action = to_tensor(np.random.randn(self.num_actions))
+        action, _, _ = self.env.action_convert(state, action)
 
         self.a_t = action
         return action
 
     def select_action(self, state, ounoise=None, param_noise=None):
         if param_noise is None:
-            container_alpha, container_beta, server_alpha, server_beta = self.actor(to_tensor(state))
+            action = self.actor(to_tensor(state))
         else:
-            container_alpha, container_beta, server_alpha, server_beta = self.actor_perturbed(to_tensor(state))
+            action = self.actor_perturbed(to_tensor(state))
 
-        container_action = dist.Beta(container_alpha, container_beta).sample()
-        server_action = dist.Beta(server_alpha, server_beta).sample()
-        action = self.env.action_convert(container_action, server_action, ounoise)
+        action, _, _ = self.env.action_convert(state, action, ounoise)
 
         self.a_t = action
         return action
@@ -155,15 +151,23 @@ class DDPG(object):
     def reset(self, obs):
         self.s_t = obs
 
-    def load_weights(self, output):
+    def load_weights(self, output, best=False):
         if output is None:
             return
-        self.actor.load_state_dict(torch.load('{}/actor.pkl'.format(output)))
-        self.critic.load_state_dict(torch.load('{}/critic.pkl'.format(output)))
+        if best:
+            self.actor.load_state_dict(torch.load('{}/actor-best.pkl'.format(output)))
+            self.critic.load_state_dict(torch.load('{}/critic-best.pkl'.format(output)))
+        else:
+            self.actor.load_state_dict(torch.load('{}/actor.pkl'.format(output)))
+            self.critic.load_state_dict(torch.load('{}/critic.pkl'.format(output)))
 
-    def save_model(self,output):
-        torch.save(self.actor.state_dict(), '{}/actor.pkl'.format(output))
-        torch.save(self.critic.state_dict(), '{}/critic.pkl'.format(output))
+    def save_model(self, output, best=False):
+        if best:
+            torch.save(self.actor.state_dict(), '{}/actor-best.pkl'.format(output))
+            torch.save(self.critic.state_dict(), '{}/critic-best.pkl'.format(output))
+        else:
+            torch.save(self.actor.state_dict(), '{}/actor.pkl'.format(output))
+            torch.save(self.critic.state_dict(), '{}/critic.pkl'.format(output))
 
     def seed(self,s):
         torch.manual_seed(s)

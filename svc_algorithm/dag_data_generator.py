@@ -4,7 +4,8 @@ from svc_algorithm.dag_server import *
 
 
 class DAGDataSet:
-    def __init__(self):
+    def __init__(self, max_timeslot):
+        self.max_timeslot = max_timeslot
         self.svc_set, self.system_manager = self.data_gen()
         self.num_containers = len(self.svc_set.container_set)
         self.num_services = len(self.svc_set.svc_set)
@@ -12,7 +13,7 @@ class DAGDataSet:
     def create_arrival_rate(self, num_services, minimum, maximum):
         return minimum + (maximum - minimum) * np.random.random(num_services)
 
-    def data_gen(self, max_timeslot=24, num_services=5, max_partitions=2, deadline_opt=(10, 20), num_edges=7, num_fogs=2, num_clouds=1,
+    def data_gen(self, num_services=5, max_partitions=1, deadline_opt=(10, 20), num_edges=7, num_fogs=2, num_clouds=1,
                 ipc=(10**12), B_gw=1024*25, B_fog=1024*10, B_cl=1024*5, P_dd_opt=(0.5,1)):
         # ipc -> TFLOPS
         # create system manager
@@ -32,11 +33,12 @@ class DAGDataSet:
             svc_set.add_services(svc)
 
         # create arrival rate table
-        self.max_timeslot = max_timeslot
+        self.max_arrival = 50
+        self.min_arrival = 30
+
         svc_arrival = list()
-        for t in range(max_timeslot):
-            svc_arrival.append(self.create_arrival_rate(num_services=num_services, minimum=12, maximum=26))
-        self.max_arrival = 26
+        for t in range(self.max_timeslot):
+            svc_arrival.append(self.create_arrival_rate(num_services=num_services, minimum=self.min_arrival, maximum=self.max_arrival))
 
         # create servers
         self.num_servers = num_edges + num_fogs + num_clouds
@@ -52,22 +54,22 @@ class DAGDataSet:
             device = np.random.choice(device_types, p=[0.1, 0.1, 0.4, 0.4])
             if device == 'tiny':
                 cpu = random.randint(3, 5) / 1000 # Tflops
-                mem = random.randint(1, 2) * 1024 * 1024 # KB
+                mem = random.randint(2, 4) * 1024 * 1024 # KB
             elif device == 'small':
                 cpu = random.randint(10, 20) / 1000 # Tflops
-                mem = random.randint(1, 8) * 1024 * 1024 # KB
+                mem = random.randint(2, 8) * 1024 * 1024 # KB
             elif device == 'large':
                 cpu = random.randint(400, 2000) / 1000 # Tflops
-                mem = random.randint(4, 4) * 1024 * 1024 # KB
+                mem = random.randint(2, 4) * 1024 * 1024 # KB
             elif device == 'mobile':
-                cpu = random.randint(100, 1000) / 1000 # Tflops
-                mem = random.randint(3, 16) * 1024 * 1024 # KB
+                cpu = random.randint(1000, 2000) / 1000 # Tflops
+                mem = random.randint(4, 16) * 1024 * 1024 # KB
             else:
                 raise RuntimeError('Unknown device type {}'.format(device))
             edge[i] = Server(cpu, mem, ipc, system_manager=system_manager, id=i)
         for i in range(num_edges, num_edges + num_fogs):
-            fog_cpu = random.randint(10, 30) # Tflops
-            fog_mem = random.randint(32, 32) * 1024 * 1024 # KB
+            fog_cpu = random.randint(5, 10) # Tflops
+            fog_mem = random.randint(16, 32) * 1024 * 1024 # KB
             fog[i] = Server(fog_cpu, fog_mem, ipc, system_manager=system_manager, id=i)
         for i in range(num_edges + num_fogs, num_edges + num_fogs + num_clouds):
             cloud_cpu = random.randint(100, 100) # Tflops

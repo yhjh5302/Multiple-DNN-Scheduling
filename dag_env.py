@@ -7,7 +7,7 @@ from copy import deepcopy
 import random
 import torch
 import torch.nn as nn
-import pyro.distributions as dist
+from pyro.distributions import Categorical, Beta
 from util import *
 
 import os
@@ -15,28 +15,27 @@ import multiprocessing as mp
 
 
 class DAGEnv (gym.Env):
-    def __init__(self):
-        mp.set_start_method('spawn')
-        self.data_set = DAGDataSet() # data gen
+    def __init__(self, max_timeslot):
+        self.data_set = DAGDataSet(max_timeslot=max_timeslot) # data gen
 
         self.cur_timeslot = 0
-        self.max_timeslot = 24
+        self.max_timeslot = max_timeslot
 
-        self.action = self.data_set.system_manager.init_servers(self.data_set.system_manager._x)
+        self.action = np.zeros(self.data_set.num_containers + self.data_set.num_servers)
         self.state = self.reset()
         self.action_space = gym.spaces.Box(low=0, high=np.inf, shape=(self.action.shape[0], ), dtype=np.int64)
         self.observation_space = gym.spaces.Box(low=0, high=np.inf, shape=(self.state.shape[0], ), dtype=np.int64)
 
     def reset(self):
-        action = self.data_set.system_manager.init_servers(self.data_set.system_manager._x)
-        state = self.data_set.system_manager.get_next_state(action)
-        state = self.Normalize(state)
+        y = self.data_set.system_manager.init_servers(self.data_set.system_manager._x)
+        state = self.data_set.system_manager.get_next_state(y)
         return state
 
     def step(self, action):
         action = deepcopy(action)
-        self.state = self.data_set.system_manager.get_next_state(action)
-        self.state = self.Normalize(self.state)
+        y = self.data_set.system_manager._y
+        y[action[0]] = action[1]
+        self.state = self.data_set.system_manager.get_next_state(y)
         reward = self.get_reward()
 
         done = False
@@ -103,103 +102,85 @@ class DAGEnv (gym.Env):
         mask[cloud_id] = -np.inf
         return np.array(mask)
 
-    def container_deploy(self, c_id, server):
-        cloud_id = self.data_set.system_manager.cloud_id
-        system_manager = self.data_set.system_manager
-        server_list = (np.arange(self.data_set.num_servers) / self.data_set.num_servers)
-
-        mask = self.get_mask(c_id)
-        if True not in np.isposinf(mask):
-            mask[cloud_id] = np.inf
-        masked_server_list = np.where(server_list > mask, mask, server_list)
-        
-        s_id = np.argmin(pow(masked_server_list - server, 2))
-        system_manager.set_y(c_id, s_id)
-        return s_id
-
-    def action_convert(self, container_action, server_action, ounoise=None):
-        container_action = to_numpy(container_action)
-        server_action = to_numpy(server_action)
-
+    def action_convert(self, state, action, ounoise=None):
         if ounoise is not None:
-            container_action += ounoise.noise()
-            server_action += ounoise.noise()
+            action += to_tensor(ounoise.noise())
+
+        self.data_set.system_manager.set_y_mat(state[:self.data_set.num_containers])
+        container_action = action[:self.data_set.num_containers]
+        server_action = action[self.data_set.num_containers:]
 
         ''' for debug
         np.set_printoptions(precision=3, suppress=True)
         print("container_action", container_action)
         print("server_action", server_action)
+        input()
         '''
 
-        action = np.zeros(self.data_set.num_containers)
-        self.reset()
-        for _ in range(self.data_set.num_containers):
-            c_id = np.argmax(container_action)
-            action[c_id] = self.container_deploy(c_id, server_action[c_id])
-            # after loop
-            container_action[c_id] = -np.inf
+        # get container id from action
+        container_prob = nn.functional.softmax(container_action, dim=-1)
+        container_dist = Categorical(container_prob)
+        container_action = container_dist.sample()
+        container_logprob = container_dist.log_prob(container_action)
+        container_entropy = container_dist.entropy()
 
-        return action
+        # action masking
+        server_mask = to_tensor(self.get_mask(container_action.item()))
+        masked_server = torch.where(server_action > server_mask, server_mask, server_action)
 
-    def action_batch_convert(self, action_batch, batch_size):
-        container_alpha, container_beta, server_alpha, server_beta = action_batch
+        # get Y
+        server_prob = nn.functional.softmax(masked_server, dim=-1)
+        server_dist = Categorical(server_prob)
+        server_action = server_dist.sample()
+        server_logprob = server_dist.log_prob(server_action)
+        server_entropy = server_dist.entropy()
 
+        action = np.array([container_action.item(), server_action.item()])
+        logprob = torch.stack([container_logprob, server_logprob], -1)
+        entropy = torch.stack([container_entropy, server_entropy], -1)
+        return action, logprob, entropy
+
+    def action_batch_convert(self, state_batch, action_batch, batch_size):
         action = []
         logprob = []
         entropy = []
+
+        #''' naive method
+        y = self.data_set.system_manager._y
+
         for i in range(batch_size):
-            container_dist = dist.Beta(container_alpha[i], container_beta[i])
-            container_action = container_dist.sample()
-            container_logprob = container_dist.log_prob(container_action)
-            container_entropy = container_dist.entropy()
-
-            server_dist = dist.Beta(server_alpha[i], server_beta[i])
-            server_action = server_dist.sample()
-            server_logprob = server_dist.log_prob(server_action)
-            server_entropy = server_dist.entropy()
-
-            action.append(self.action_convert(container_action, server_action))
-            logprob.append(torch.cat([container_logprob, server_logprob], -1))
-            entropy.append(torch.cat([container_entropy, server_entropy], -1))
+            act, log, ent = self.action_convert(state_batch[i], action_batch[i])
+            action.append(act)
+            logprob.append(log)
+            entropy.append(ent)
 
         action = np.array(action)
         logprob = torch.stack(logprob)
         entropy = torch.stack(entropy)
+
+        self.data_set.system_manager.set_y_mat(y)
+        #'''
         
         ''' parallel method
         working_queue = [action for action in action_batch.cpu().detach()]
         with mp.Pool(processes=os.cpu_count() - 1) as pool:
             result = list(pool.map(self.action_convert, working_queue))
         result = np.array(result)
+        print()
         '''
 
         return action, logprob, entropy
 
-    def Normalize(self, state):
-        start = 0
-        end = start + self.data_set.num_containers
-        container_arrival = state[start:end] = state[start:end] # container arrival
-        start = end
-        end = start + self.data_set.num_containers
-        container_computation_amount = state[start:end] = state[start:end] / (10**12) # container computation amount, Tflop
-        start = end
-        end = start + self.data_set.num_containers
-        container_memory = state[start:end] = state[start:end] / (1024 * 1024)  # container memory, GBytes
-        start = end
-        end = start + self.data_set.num_servers
-        server_cpu = state[start:end] = state[start:end] / (10**12) # server cpu, Tflops
-        start = end
-        end = start + self.data_set.num_servers
-        server_memory = state[start:end] = state[start:end] / (1024 * 1024) # server memory, GBytes
-        start = end
-        end = start + self.data_set.num_servers
-        server_energy = state[start:end] = state[start:end] / 100 # server energy
-        return state
-
     def PrintState(self, state):
         start = 0
         end = start + self.data_set.num_containers
-        #print("container_arrival", state[start:end]) # container arrival
+        print("y", state[start:end]) # y
+        start = end
+        end = start + self.data_set.num_containers
+        print("x", state[start:end]) # x
+        start = end
+        end = start + self.data_set.num_containers
+        print("container_arrival", state[start:end]) # container arrival
         start = end
         end = start + self.data_set.num_containers
         #print("container_computation_amount", state[start:end]) # container computation amount
@@ -208,10 +189,10 @@ class DAGEnv (gym.Env):
         #print("container_memory", state[start:end]) # container memory
         start = end
         end = start + self.data_set.num_servers
-        #print("server_cpu", state[start:end]) # server cpu, Tflops
+        print("server_cpu", state[start:end]) # server cpu, Tflops
         start = end
         end = start + self.data_set.num_servers
-        #print("server_memory", state[start:end]) # server memory, GBytes
+        print("server_memory", state[start:end]) # server memory, GBytes
         start = end
         end = start + self.data_set.num_servers
-        #print("server_energy", state[start:end]) # server energy
+        print("server_energy", state[start:end]) # server energy

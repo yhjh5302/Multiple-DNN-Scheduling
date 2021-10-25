@@ -49,7 +49,6 @@ class Evaluator(object):
 
             if debug:
                 prYellow('[Evaluate] #Timeslot{}: timeslot_reward:{}'.format(timeslot, timeslot_reward / self.max_step))
-                print("Y", env.data_set.system_manager._y) # for debug
                 env.PrintState(observation) # for debug
 
         if env.unwrapped.spec.id == 'TYEnv-v0' or env.unwrapped.spec.id == 'DAGEnv-v0':
@@ -65,15 +64,17 @@ class Evaluator(object):
         return np.mean(result)
 
     def save_results(self, fn):
+        if self.results.shape[1] % self.interval == 0:
+            results = np.mean(self.results.reshape(1,-1,self.interval), axis=2)
 
-        y = np.mean(self.results, axis=0)
-        error=np.std(self.results, axis=0)
-                    
-        x = range(0,self.results.shape[1]*self.interval,self.interval)
-        fig, ax = plt.subplots(1, 1, figsize=(6, 5))
-        plt.xlabel('Episode')
-        plt.ylabel('Average Reward')
-        ax.errorbar(x, y, yerr=error, fmt='-o')
-        plt.savefig(fn+'.png')
-        savemat(fn+'.mat', {'reward':self.results})
-        plt.close(fig)
+            y = np.mean(results, axis=0)
+            error=np.std(results, axis=0)
+                        
+            x = range(0,results.shape[1]*self.interval,self.interval)
+            fig, ax = plt.subplots(1, 1, figsize=(6, 5))
+            plt.xlabel('Episode')
+            plt.ylabel('Average Reward')
+            ax.errorbar(x, y, yerr=error, fmt='-o')
+            plt.savefig(fn+'.png')
+            savemat(fn+'.mat', {'reward':results})
+            plt.close(fig)

@@ -18,6 +18,7 @@ from parameter_noise import AdaptiveParamNoiseSpec, ddpg_distance_metric
 
 def train(num_episodes, num_timeslots, max_step, validate_episodes, agent, ounoise, param_noise, env, evaluate, output, debug=False):
     agent.is_training = True
+    max_reward = 0
     for episode in range(num_episodes):
         episode_reward = 0.
         episode_loss = 0.
@@ -54,6 +55,7 @@ def train(num_episodes, num_timeslots, max_step, validate_episodes, agent, ounoi
 
                 # agent observe and update policy
                 agent.observe(reward, observation2, done)
+                loss = 0
                 if episode * num_timeslots * max_step + timeslot * max_step + step >= args.warmup:
                     loss = agent.update_policy()
                     timeslot_loss += loss
@@ -61,6 +63,11 @@ def train(num_episodes, num_timeslots, max_step, validate_episodes, agent, ounoi
                 # update
                 observation = deepcopy(observation2)
                 timeslot_reward += reward
+
+                if debug:
+                    print("y", [[i] if idx == action[0] else i for idx, i in enumerate(env.data_set.system_manager._y)])
+                    prLightGray('#{}: timeslot:{} step:{} reward:{} loss:{} done:{}'.format(episode, timeslot, step, reward, loss, done))
+                    #print("action", action)
 
                 if done:
                     break
@@ -79,8 +86,7 @@ def train(num_episodes, num_timeslots, max_step, validate_episodes, agent, ounoi
 
             if debug:
                 prGreen('#{}: timeslot:{} avg_timeslot_reward:{} loss:{}'.format(episode, timeslot, timeslot_reward / max_step, timeslot_loss / max_step))
-                #env.PrintState(observation) # for debug
-                print("Y", env.data_set.system_manager._y) # for debug
+                env.PrintState(observation) # for debug
                 #print("perturbed_actions", np.mean(np.array(perturbed_actions), axis=0))
                 #print("unperturbed_actions", np.mean(np.array(unperturbed_actions), axis=0))
                 #print("stddev", param_noise.current_stddev)
@@ -94,6 +100,12 @@ def train(num_episodes, num_timeslots, max_step, validate_episodes, agent, ounoi
         # [optional] save intermideate model
         if episode % int(num_episodes / 5) == 0:
             agent.save_model(output)
+
+        # [optional] save best model
+        average_reward = episode_reward / max_step / num_timeslots
+        if max_reward < average_reward:
+            max_reward = average_reward
+            agent.save_model(output, best=True)
 
         # [optional] evaluate
         if evaluate is not None and validate_episodes > 0 and episode % validate_episodes == 0:
@@ -126,29 +138,25 @@ if __name__ == "__main__":
 
     parser.add_argument('--mode', default='train', type=str, help='support option: train/test')
     parser.add_argument('--env', default='DAGEnv-v0', type=str, help='open-ai gym environment')
-    parser.add_argument('--hidden1', default=2048, type=int, help='hidden num of 1st fully connect layer')
-    parser.add_argument('--hidden2', default=2048, type=int, help='hidden num of 2nd fully connect layer')
-    parser.add_argument('--hidden3', default=2048, type=int, help='hidden num of 3rd fully connect layer')
-    parser.add_argument('--hidden4', default=2048, type=int, help='hidden num of 4th fully connect layer')
-    parser.add_argument('--hidden5', default=1024, type=int, help='hidden num of 5th fully connect layer')
-    parser.add_argument('--hidden6', default=1024, type=int, help='hidden num of 6th fully connect layer')
-    parser.add_argument('--learning_rate', default=0.00005, type=float, help='learning rate')
-    parser.add_argument('--policy_learning_rate', default=0.00005, type=float, help='policy net learning rate (only for DDPG)')
+    parser.add_argument('--hidden', default=[2048, 2048, 2048, 2048, 1024, 1024], type=list, help='hidden num of fully connect layer')
+    parser.add_argument('--learning_rate', default=0.000005, type=float, help='learning rate')
+    parser.add_argument('--policy_learning_rate', default=0.000005, type=float, help='policy net learning rate (only for DDPG)')
     parser.add_argument('--policy_freq', default=2, type=float, help='policy net learning rate (only for DDPG)')
     parser.add_argument('--discount', default=0.99, type=float, help='')
-    parser.add_argument('--warmup', default=64, type=int, help='how many episodes without training but only filling the replay memory')
+    parser.add_argument('--warmup', default=10000, type=int, help='how many episodes without training but only filling the replay memory')
     parser.add_argument('--bsize', default=64, type=int, help='minibatch size')
-    parser.add_argument('--rmsize', default=65, type=int, help='memory size')
+    parser.add_argument('--rmsize', default=10000, type=int, help='memory size')
     parser.add_argument('--window_length', default=1, type=int, help='')
+    parser.add_argument('--interval', default=1, type=int, help='')
     parser.add_argument('--tau', default=0.005, type=float, help='moving average for target network')
     parser.add_argument('--train_episodes', default=1000, type=int, help='how many episodes to train')
-    parser.add_argument('--max_timeslot', default=24, type=int, help='how many timeslots do we consider')
-    parser.add_argument('--max_step', default=1, type=int, help='how many steps to perform during each timeslot')
+    parser.add_argument('--max_timeslot', default=1, type=int, help='how many timeslots do we consider')
+    parser.add_argument('--max_step', default=200, type=int, help='how many steps to perform during each timeslot')
     parser.add_argument('--validate_episodes', default=1, type=int, help='how many episodes to perform during validate experiment')
     parser.add_argument('--output', default='output', type=str, help='')
     parser.add_argument('--debug', dest='debug', action='store_true')
     parser.add_argument('--init_w', default=0.003, type=float, help='')
-    parser.add_argument('--noise_scale', default=0.3, type=float, metavar='G', help='initial noise scale (default: 0.3)')
+    parser.add_argument('--noise_scale', default=1.0, type=float, metavar='G', help='initial noise scale (default: 0.3)')
     parser.add_argument('--final_noise_scale', type=float, default=0.003, metavar='G', help='final noise scale (default: 0.3)')
     parser.add_argument('--exploration_end', type=int, default=100, metavar='N', help='number of episodes with noise (default: 100)')
     parser.add_argument('--initial_stddev', type=int, default=0.01, metavar='N', help='(default: 0.005)')
@@ -175,7 +183,7 @@ if __name__ == "__main__":
         print("Device:", torch.device("cpu"))
 
     print(args.env)
-    env = gym.make(args.env)
+    env = gym.make(args.env, max_timeslot=args.max_timeslot)
 
     if args.seed > 0:
         np.random.seed(args.seed)
@@ -187,7 +195,7 @@ if __name__ == "__main__":
     print("num_actions:", env.action_space.shape)
 
     agent = DDPG(env, num_states, num_actions, args)
-    evaluate = Evaluator(args.validate_episodes, args.max_timeslot, args.max_step, 1, save_path=args.output)
+    evaluate = Evaluator(args.validate_episodes, args.max_timeslot, args.max_step, args.interval, save_path=args.output)
 
     # noise initialize
     ounoise = OUNoise(action_dimension=agent.num_actions, noise_scale=args.noise_scale, final_noise_scale=args.final_noise_scale, exploration_end=args.exploration_end)
