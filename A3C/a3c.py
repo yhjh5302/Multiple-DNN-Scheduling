@@ -17,8 +17,8 @@ class A3CAgent:
         self.global_episode = mp.Value('i', 0)
         self.GLOBAL_MAX_EPISODE = global_max_episode
 
-        self.obs_dim = self.env.observation_space.shape[0]
-        self.action_dim = self.env.action_space.shape[0]
+        self.obs_dim = self.env.data_set.system_manager.NUM_CHANNEL
+        self.action_dim = self.env.data_set.num_servers
 
         self.num_servers = self.env.data_set.num_servers
         self.num_containers = self.env.data_set.num_containers
@@ -27,7 +27,7 @@ class A3CAgent:
         self.global_network.share_memory()
         self.global_optimizer = optim.Adam(self.global_network.parameters(), lr=lr)
         
-        self.workers = [Worker(i, env, self.gamma, self.global_network, self.global_optimizer, self.global_episode, self.GLOBAL_MAX_EPISODE) for i in range(int(mp.cpu_count() / 12))]
+        self.workers = [Worker(i, env, self.gamma, self.global_network, self.global_optimizer, self.global_episode, self.GLOBAL_MAX_EPISODE) for i in range(int(mp.cpu_count() / 8))]
     
     def train(self):
         print("Training on {} cores and {} workers".format(mp.cpu_count(), len(self.workers)))

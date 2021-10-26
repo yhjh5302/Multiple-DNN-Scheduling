@@ -68,8 +68,8 @@ class DAGDataSet:
                 raise RuntimeError('Unknown device type {}'.format(device))
             edge[i] = Server(cpu, mem, ipc, system_manager=system_manager, id=i)
         for i in range(num_edges, num_edges + num_fogs):
-            fog_cpu = random.randint(5, 10) # Tflops
-            fog_mem = random.randint(16, 32) * 1024 * 1024 # KB
+            fog_cpu = random.randint(5, 5) # Tflops
+            fog_mem = random.randint(16, 16) * 1024 * 1024 # KB
             fog[i] = Server(fog_cpu, fog_mem, ipc, system_manager=system_manager, id=i)
         for i in range(num_edges + num_fogs, num_edges + num_fogs + num_clouds):
             cloud_cpu = random.randint(100, 100) # Tflops

@@ -33,18 +33,18 @@ class DAGEnv (gym.Env):
         state = self.data_set.system_manager.get_next_state(y)
         return state
 
-    def step(self, action):
-        action = deepcopy(action)
+    def next_step(self, c_id, action):
         y = self.data_set.system_manager._y
-        y[action[0]] = action[1]
+        y[c_id] = action
         self.state = self.data_set.system_manager.get_next_state(y)
         reward = self.get_reward()
 
         self.cur_step += 1
-        if self.cur_step < self.max_step - 1:
+        if self.cur_step < self.max_step:
             done = False
         else:
             done = True
+            self.cur_step = 0
         info = {}
         return self.state, reward, done, info
 
@@ -107,6 +107,9 @@ class DAGEnv (gym.Env):
 
         mask[cloud_id] = -np.inf
         return np.array(mask)
+    
+    def get_current_c_id(self, state):
+        return np.where(state[0,self.data_set.system_manager.cloud_id,:] == 1)[0][0]
 
     def action_convert(self, c_id, action):
         # action masking
@@ -119,14 +122,15 @@ class DAGEnv (gym.Env):
         action = dist.sample().item()
         return action, to_numpy(mask)
 
-    def action_batch_convert(self, mask_batch, action_batch, batch_size):
+    def action_batch_convert(self, mask_batch, action_batch):
         y = self.data_set.system_manager._y
 
         logprob = []
         entropy = []
 
-        for i in range(batch_size):
-            masked_action = torch.where(action_batch[i] > mask_batch[i], mask_batch[i], action_batch[i])
+        for i in range(action_batch.shape[0]):
+            mask = to_tensor(mask_batch[i])
+            masked_action = torch.where(action_batch[i] > mask, mask, action_batch[i])
             prob = nn.functional.softmax(masked_action, dim=-1)
             dist = Categorical(prob)
             action = dist.sample()
@@ -141,13 +145,13 @@ class DAGEnv (gym.Env):
         return logprob, entropy
 
     def PrintState(self, state):
-        print("0: which container which server", state[:][:][0])
-        print("1: deployed container computation amount", state[:][:][1])
-        print("2: deployed container memory", state[:][:][2])
-        print("3: deployed container arrival rate", state[:][:][3])
-        print("4: server cpu", state[:][:][4])
-        print("5: server memory", state[:][:][5])
-        print("6: server energy", state[:][:][6])
+        print("0: which container which server", state[:,0,:,:])
+        print("1: deployed container computation amount", state[:,1,:,:])
+        print("2: deployed container memory", state[:,2,:,:])
+        print("3: deployed container arrival rate", state[:,3,:,:])
+        print("4: server cpu", state[:,4,:,:])
+        print("5: server memory", state[:,5,:,:])
+        print("6: server energy", state[:,6,:,:])
         for c_id in range(self.data_set.num_containers):
-            print("7+%d: dependency"%c_id, state[:][:][7+c_id])
+            print("7+%d: dependency"%c_id, state[:,7+c_id,:,:])
         input()

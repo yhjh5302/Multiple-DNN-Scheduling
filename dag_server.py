@@ -94,28 +94,28 @@ class SystemManager():
 
     def get_next_state(self, mat_y):
         self.set_y_mat(mat_y)
-        next_state = np.zeros((self.num_containers, self.num_servers, self.NUM_CHANNEL))
+        next_state = np.zeros((self.NUM_CHANNEL, self.num_servers, self.num_containers))
         for c_id, s_id in enumerate(self._y):
             # 0: which container which server
-            next_state[c_id][s_id][0] = 1
+            next_state[0,s_id,c_id] = 1
             # 1: deployed container computation amount
-            next_state[c_id][:][1] = self.service_set.container_set[c_id].computation_amount / (10**12)
+            next_state[1,:,c_id] = self.service_set.container_set[c_id].computation_amount / (10**12)
             # 2: deployed container memory
-            next_state[c_id][:][2] = self.service_set.container_set[c_id].memory / (1024 * 1024)
+            next_state[2,:,c_id] = self.service_set.container_set[c_id].memory / (1024 * 1024 * 1024)
             # 3: deployed container arrival rate
-            next_state[c_id][:][3] = self.container_arrival[c_id] / 50
+            next_state[3,:,c_id] = self.container_arrival[c_id] / 50
         for s_id in range(self.num_servers):
             # 4: server remaining cpu
-            next_state[:][s_id][4] = self.cpu_resource[s_id] - self.server[s_id].used_cpu / (10**12)
+            next_state[4,s_id,:] = (self.cpu_resource[s_id] - self.server[s_id].used_cpu) / (10**12)
             # 5: server remaining memory
-            next_state[:][s_id][5] = self.mem_resource[s_id] - self.server[s_id].used_mem / (1024 * 1024)
+            next_state[5,s_id,:] = (self.mem_resource[s_id] - self.server[s_id].used_mem) / (1024 * 1024 * 1024)
             # 6: server remaining energy
-            next_state[:][s_id][6] = self.server[s_id].get_energy() - self.server[s_id].energy_consumption() / 100
+            next_state[6,s_id,:] = (self.server[s_id].get_energy() - self.server[s_id].energy_consumption()) / 100
         for c_id, s_id in enumerate(self._y): # from deployed containers
             for container in range(self.num_containers): # this container have this transmission delay
                 # 7~: dependency between containers & bandwidth between servers
                 if self.service_set.container_set[c_id] in self.service_set.container_set[container].predecessors:
-                    next_state[c_id][s_id][7+container] = self.net_manager.communication(self.service_set.container_set[c_id].output_data_size, self.service_set.container_set[container]._y, self.service_set.container_set[c_id]._y, self)
+                    next_state[7+container,s_id,c_id] = self.net_manager.communication(self.service_set.container_set[c_id].output_data_size, self.service_set.container_set[container]._y, self.service_set.container_set[c_id]._y, self)
         return next_state
 
     def total_time(self):  # use  todo: add transmission
@@ -222,8 +222,8 @@ class Container:
         else:
             T_cp = float("inf")
         # cloud disadvantage
-        if self._y is system_manager.cloud_id:
-            T_cp *= 100
+        if not self._y is system_manager.cloud_id:
+            T_cp /= 10
         return T_cp
 
     def get_transmission_time(self, system_manager, net_manager): # for state

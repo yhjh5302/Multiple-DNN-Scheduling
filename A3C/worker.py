@@ -17,8 +17,8 @@ class Worker(mp.Process):
         
         self.env = env
         self.env.seed(id)
-        self.obs_dim = env.observation_space.shape[0]
-        self.action_dim = env.action_space.shape[0]
+        self.obs_dim = self.env.data_set.system_manager.NUM_CHANNEL
+        self.action_dim = self.env.data_set.num_servers
 
         self.gamma = gamma
         self.local_network = Network(self.obs_dim, self.action_dim).to(self.device)
@@ -32,10 +32,11 @@ class Worker(mp.Process):
         self.sync_with_global()
     
     def get_action(self, state):
+        c_id = self.env.get_current_c_id(state)
         state = torch.FloatTensor(state).to(self.device)
 
-        logits = self.local_network.forward_logits(state)
-        action, mask = self.env.action_convert(logits)
+        logits = self.local_network.forward_logits(state.reshape(1,*state.shape))
+        action, mask = self.env.action_convert(c_id, logits)
 
         return action, mask
     
@@ -76,6 +77,8 @@ class Worker(mp.Process):
             global_params._grad = local_params._grad
         self.global_optimizer.step()
 
+        return value_loss, policy_loss
+
     def sync_with_global(self):
         self.local_network.load_state_dict(self.global_network.state_dict())
 
@@ -86,8 +89,9 @@ class Worker(mp.Process):
         step = 0
         
         while self.global_episode.value < self.GLOBAL_MAX_EPISODE:
+            c_id = self.env.get_current_c_id(state)
             action, mask = self.get_action(state)
-            next_state, reward, done, _ = self.env.step(action)
+            next_state, reward, done, _ = self.env.next_step(c_id, action)
             trajectory.append([state, action, mask, reward, next_state, done])
             episode_reward += reward
             step += 1
@@ -95,11 +99,13 @@ class Worker(mp.Process):
             if done:
                 with self.global_episode.get_lock():
                     self.global_episode.value += 1
-                print(self.name + " | episode: "+ str(self.global_episode.value) + " " + str(episode_reward / step))
-                print(self.env.data_set.system_manager._y)
 
-                self.update_global(trajectory)
+                value_loss, policy_loss = self.update_global(trajectory)
                 self.sync_with_global()
+
+                print(self.name + " | episode: "+ str(self.global_episode.value) + " " + str(episode_reward / step), "value loss:", float(value_loss), "policy_loss:", float(policy_loss))
+                print("Y", self.env.data_set.system_manager._y)
+                #self.env.PrintState(state)
 
                 trajectory = []
                 episode_reward = 0
