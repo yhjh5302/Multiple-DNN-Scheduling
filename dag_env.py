@@ -1,7 +1,7 @@
 import gym
 from gym.utils import seeding
-from svc_algorithm.dag_server import *
-from svc_algorithm.dag_data_generator import *
+from dag_server import *
+from dag_data_generator import *
 from copy import deepcopy
 
 import random
@@ -15,16 +15,18 @@ import multiprocessing as mp
 
 
 class DAGEnv (gym.Env):
-    def __init__(self, max_timeslot):
+    def __init__(self, max_timeslot, max_step):
         self.data_set = DAGDataSet(max_timeslot=max_timeslot) # data gen
 
         self.cur_timeslot = 0
         self.max_timeslot = max_timeslot
+        self.cur_step = 0
+        self.max_step = max_step
 
-        self.action = np.zeros(self.data_set.num_containers + self.data_set.num_servers)
+        self.action = np.zeros(self.data_set.num_servers)
         self.state = self.reset()
         self.action_space = gym.spaces.Box(low=0, high=np.inf, shape=(self.action.shape[0], ), dtype=np.int64)
-        self.observation_space = gym.spaces.Box(low=0, high=np.inf, shape=(self.state.shape[0], ), dtype=np.int64)
+        self.observation_space = gym.spaces.Box(low=0, high=np.inf, shape=(self.state.flatten().shape[0], ), dtype=np.int64)
 
     def reset(self):
         y = self.data_set.system_manager.init_servers(self.data_set.system_manager._x)
@@ -38,7 +40,11 @@ class DAGEnv (gym.Env):
         self.state = self.data_set.system_manager.get_next_state(y)
         reward = self.get_reward()
 
-        done = False
+        self.cur_step += 1
+        if self.cur_step < self.max_step - 1:
+            done = False
+        else:
+            done = True
         info = {}
         return self.state, reward, done, info
 
@@ -102,97 +108,46 @@ class DAGEnv (gym.Env):
         mask[cloud_id] = -np.inf
         return np.array(mask)
 
-    def action_convert(self, state, action, ounoise=None):
-        if ounoise is not None:
-            action += to_tensor(ounoise.noise())
-
-        self.data_set.system_manager.set_y_mat(state[:self.data_set.num_containers])
-        container_action = action[:self.data_set.num_containers]
-        server_action = action[self.data_set.num_containers:]
-
-        ''' for debug
-        np.set_printoptions(precision=3, suppress=True)
-        print("container_action", container_action)
-        print("server_action", server_action)
-        input()
-        '''
-
-        # get container id from action
-        container_prob = nn.functional.softmax(container_action, dim=-1)
-        container_dist = Categorical(container_prob)
-        container_action = container_dist.sample()
-        container_logprob = container_dist.log_prob(container_action)
-        container_entropy = container_dist.entropy()
-
+    def action_convert(self, c_id, action):
         # action masking
-        server_mask = to_tensor(self.get_mask(container_action.item()))
-        masked_server = torch.where(server_action > server_mask, server_mask, server_action)
+        mask = to_tensor(self.get_mask(c_id))
+        masked_action = torch.where(action > mask, mask, action)
 
         # get Y
-        server_prob = nn.functional.softmax(masked_server, dim=-1)
-        server_dist = Categorical(server_prob)
-        server_action = server_dist.sample()
-        server_logprob = server_dist.log_prob(server_action)
-        server_entropy = server_dist.entropy()
+        prob = nn.functional.softmax(masked_action, dim=-1)
+        dist = Categorical(prob)
+        action = dist.sample().item()
+        return action, to_numpy(mask)
 
-        action = np.array([container_action.item(), server_action.item()])
-        logprob = torch.stack([container_logprob, server_logprob], -1)
-        entropy = torch.stack([container_entropy, server_entropy], -1)
-        return action, logprob, entropy
+    def action_batch_convert(self, mask_batch, action_batch, batch_size):
+        y = self.data_set.system_manager._y
 
-    def action_batch_convert(self, state_batch, action_batch, batch_size):
-        action = []
         logprob = []
         entropy = []
 
-        #''' naive method
-        y = self.data_set.system_manager._y
-
         for i in range(batch_size):
-            act, log, ent = self.action_convert(state_batch[i], action_batch[i])
-            action.append(act)
-            logprob.append(log)
-            entropy.append(ent)
+            masked_action = torch.where(action_batch[i] > mask_batch[i], mask_batch[i], action_batch[i])
+            prob = nn.functional.softmax(masked_action, dim=-1)
+            dist = Categorical(prob)
+            action = dist.sample()
+            logprob.append(dist.log_prob(action))
+            entropy.append(dist.entropy())
 
-        action = np.array(action)
         logprob = torch.stack(logprob)
         entropy = torch.stack(entropy)
 
         self.data_set.system_manager.set_y_mat(y)
-        #'''
-        
-        ''' parallel method
-        working_queue = [action for action in action_batch.cpu().detach()]
-        with mp.Pool(processes=os.cpu_count() - 1) as pool:
-            result = list(pool.map(self.action_convert, working_queue))
-        result = np.array(result)
-        print()
-        '''
 
-        return action, logprob, entropy
+        return logprob, entropy
 
     def PrintState(self, state):
-        start = 0
-        end = start + self.data_set.num_containers
-        print("y", state[start:end]) # y
-        start = end
-        end = start + self.data_set.num_containers
-        print("x", state[start:end]) # x
-        start = end
-        end = start + self.data_set.num_containers
-        print("container_arrival", state[start:end]) # container arrival
-        start = end
-        end = start + self.data_set.num_containers
-        #print("container_computation_amount", state[start:end]) # container computation amount
-        start = end
-        end = start + self.data_set.num_containers
-        #print("container_memory", state[start:end]) # container memory
-        start = end
-        end = start + self.data_set.num_servers
-        print("server_cpu", state[start:end]) # server cpu, Tflops
-        start = end
-        end = start + self.data_set.num_servers
-        print("server_memory", state[start:end]) # server memory, GBytes
-        start = end
-        end = start + self.data_set.num_servers
-        print("server_energy", state[start:end]) # server energy
+        print("0: which container which server", state[:][:][0])
+        print("1: deployed container computation amount", state[:][:][1])
+        print("2: deployed container memory", state[:][:][2])
+        print("3: deployed container arrival rate", state[:][:][3])
+        print("4: server cpu", state[:][:][4])
+        print("5: server memory", state[:][:][5])
+        print("6: server energy", state[:][:][6])
+        for c_id in range(self.data_set.num_containers):
+            print("7+%d: dependency"%c_id, state[:][:][7+c_id])
+        input()

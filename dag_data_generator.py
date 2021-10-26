@@ -1,14 +1,12 @@
 import numpy as np
 import random
-from svc_algorithm.dag_server import *
+from dag_server import *
 
 
 class DAGDataSet:
     def __init__(self, max_timeslot):
         self.max_timeslot = max_timeslot
         self.svc_set, self.system_manager = self.data_gen()
-        self.num_containers = len(self.svc_set.container_set)
-        self.num_services = len(self.svc_set.svc_set)
 
     def create_arrival_rate(self, num_services, minimum, maximum):
         return minimum + (maximum - minimum) * np.random.random(num_services)
@@ -31,6 +29,8 @@ class DAGDataSet:
             svc.create_partitions(opt=(0, ((1, num_partitions), (0, num_partitions), (1, ((0, num_partitions), (0, num_partitions))), (0, 1))))
 
             svc_set.add_services(svc)
+        self.num_services = len(svc_set.svc_set)
+        self.num_containers = len(svc_set.container_set)
 
         # create arrival rate table
         self.max_arrival = 50
@@ -96,7 +96,8 @@ class DAGDataSet:
         system_manager.set_servers(edge, fog, cloud)
         system_manager.net_manager = net_manager
         system_manager.num_servers = self.num_servers
-        system_manager.num_containers = len(svc_set.container_set)
+        system_manager.num_containers = self.num_containers
+        system_manager.NUM_CHANNEL = 7 + self.num_containers
 
         min_x = np.zeros_like(svc_set.container_set)
         for container in svc_set.container_set:
