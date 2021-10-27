@@ -72,8 +72,8 @@ class DAGDataSet:
             fog_mem = random.randint(16, 16) * 1024 * 1024 # KB
             fog[i] = Server(fog_cpu, fog_mem, ipc, system_manager=system_manager, id=i)
         for i in range(num_edges + num_fogs, num_edges + num_fogs + num_clouds):
-            cloud_cpu = random.randint(100, 100) # Tflops
-            cloud_mem = random.randint(1024, 1024) * 1024 * 1024 # KB
+            cloud_cpu = random.randint(30, 30) # Tflops
+            cloud_mem = random.randint(256, 256) * 1024 * 1024 # KB
             cloud[i] = Server(cloud_cpu, cloud_mem, ipc, system_manager=system_manager, id=i)
 
         # create network manager

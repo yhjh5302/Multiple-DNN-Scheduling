@@ -11,10 +11,10 @@ def train(env, gamma, lr, GLOBAL_MAX_EPISODE):
 
 if __name__ == "__main__":
     gamma = 0.99
-    lr = 0.000005
-    GLOBAL_MAX_STEP = 30
+    lr = 0.001
+    GLOBAL_MAX_STEP = 128
     GLOBAL_MAX_TIMESLOT = 1
-    GLOBAL_MAX_EPISODE = 1000 * GLOBAL_MAX_STEP
+    GLOBAL_MAX_EPISODE = 10000
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print("Device:", device, torch.cuda.get_device_name(0))

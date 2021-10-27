@@ -33,9 +33,9 @@ class DAGEnv (gym.Env):
         state = self.data_set.system_manager.get_next_state(y)
         return state
 
-    def next_step(self, c_id, action):
+    def next_step(self, action):
         y = self.data_set.system_manager._y
-        y[c_id] = action
+        y[action[0]] = action[1]
         self.state = self.data_set.system_manager.get_next_state(y)
         reward = self.get_reward()
 
@@ -47,6 +47,9 @@ class DAGEnv (gym.Env):
             self.cur_step = 0
         info = {}
         return self.state, reward, done, info
+    
+    def get_y(self):
+        return self.data_set.system_manager._y
 
     def get_reward(self):
         T_n = self.data_set.system_manager.total_time()
@@ -102,7 +105,7 @@ class DAGEnv (gym.Env):
         system_manager = self.data_set.system_manager
 
         [system_manager.set_y(c_id, s_id) for s_id in system_manager.server]
-        mask = [s.constraint_chk() for s_id, s in system_manager.server.items()]
+        mask = [s.constraint_chk() for s in system_manager.server.values()]
         [system_manager.reset_y(c_id, s_id, cloud_id) for s_id in system_manager.server]
 
         mask[cloud_id] = -np.inf
@@ -111,36 +114,66 @@ class DAGEnv (gym.Env):
     def get_current_c_id(self, state):
         return np.where(state[0,self.data_set.system_manager.cloud_id,:] == 1)[0][0]
 
-    def action_convert(self, c_id, action):
+    def action_convert(self, container_action, server_action):
         # action masking
-        mask = to_tensor(self.get_mask(c_id))
-        masked_action = torch.where(action > mask, mask, action)
+        masked_action = to_tensor(np.where(self.get_y() == self.data_set.system_manager.cloud_id, to_numpy(container_action), float('-inf')))
+        if not False in torch.isinf(masked_action):
+            masked_action = container_action
+
+        # get c_id
+        container_prob = nn.functional.softmax(masked_action, dim=-1)
+        container_dist = Categorical(container_prob)
+        container_action = container_dist.sample().item()
+
+        # action masking
+        mask = to_tensor(self.get_mask(container_action))
+        masked_action = torch.where(server_action > mask, mask, server_action)
 
         # get Y
-        prob = nn.functional.softmax(masked_action, dim=-1)
-        dist = Categorical(prob)
-        action = dist.sample().item()
-        return action, to_numpy(mask)
+        server_prob = nn.functional.softmax(masked_action, dim=-1)
+        server_dist = Categorical(server_prob)
+        server_action = server_dist.sample().item()
+        return np.array([container_action, server_action])
 
-    def action_batch_convert(self, mask_batch, action_batch):
-        y = self.data_set.system_manager._y
+    def action_batch_convert(self, y_batch, container_action_batch, server_action_batch):
+        temp_y = self.get_y()
 
         logprob = []
         entropy = []
 
-        for i in range(action_batch.shape[0]):
-            mask = to_tensor(mask_batch[i])
-            masked_action = torch.where(action_batch[i] > mask, mask, action_batch[i])
-            prob = nn.functional.softmax(masked_action, dim=-1)
-            dist = Categorical(prob)
-            action = dist.sample()
-            logprob.append(dist.log_prob(action))
-            entropy.append(dist.entropy())
+        for i, y in enumerate(y_batch):
+            self.data_set.system_manager.set_y_mat(y)
+
+            # action masking
+            masked_action = to_tensor(np.where(y == self.data_set.system_manager.cloud_id, to_numpy(container_action_batch[i]), float('-inf')))
+            if not False in torch.isinf(masked_action):
+                masked_action = container_action_batch[i]
+
+            # get c_id
+            container_prob = nn.functional.softmax(masked_action, dim=-1)
+            container_dist = Categorical(container_prob)
+            container_action = container_dist.sample()
+            container_logprob = container_dist.log_prob(container_action)
+            container_entropy = container_dist.entropy()
+
+            # action masking
+            mask = to_tensor(self.get_mask(container_action))
+            masked_action = torch.where(server_action_batch[i] > mask, mask, server_action_batch[i])
+
+            # get Y
+            server_prob = nn.functional.softmax(masked_action, dim=-1)
+            server_dist = Categorical(server_prob)
+            server_action = server_dist.sample()
+            server_logprob = server_dist.log_prob(server_action)
+            server_entropy = server_dist.entropy()
+
+            logprob.append(container_logprob + server_logprob)
+            entropy.append(container_entropy + server_entropy)
 
         logprob = torch.stack(logprob)
         entropy = torch.stack(entropy)
 
-        self.data_set.system_manager.set_y_mat(y)
+        self.data_set.system_manager.set_y_mat(temp_y)
 
         return logprob, entropy
 
