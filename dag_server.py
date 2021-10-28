@@ -115,7 +115,9 @@ class SystemManager():
             for container in range(self.num_containers): # this container have this transmission delay
                 # 7~: dependency between containers & bandwidth between servers
                 if self.service_set.container_set[c_id] in self.service_set.container_set[container].predecessors:
-                    next_state[7+container,s_id,c_id] = self.net_manager.communication(self.service_set.container_set[c_id].output_data_size, self.service_set.container_set[container]._y, self.service_set.container_set[c_id]._y, self)
+                    next_state[7+container,s_id,c_id] = self.net_manager.communication(self.service_set.container_set[c_id].output_data_size, self.service_set.container_set[c_id]._y, self.service_set.container_set[container]._y, self)
+                if self.service_set.container_set[c_id] in self.service_set.container_set[container].successors:
+                    next_state[7+container,s_id,c_id] = self.net_manager.communication(self.service_set.container_set[container].output_data_size, self.service_set.container_set[container]._y, self.service_set.container_set[c_id]._y, self)
         return next_state
 
     def total_time(self):  # use  todo: add transmission
