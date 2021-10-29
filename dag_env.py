@@ -7,7 +7,7 @@ from copy import deepcopy
 import random
 import torch
 import torch.nn as nn
-from pyro.distributions import Categorical, Beta
+from pyro.distributions import OneHotCategorical, Categorical, Beta
 from util import *
 
 import os
@@ -118,13 +118,11 @@ class DAGEnv (gym.Env):
 
         # get Y
         prob = nn.functional.softmax(masked_action, dim=-1)
-        dist = Categorical(prob)
-        action = dist.sample().item()
+        dist = OneHotCategorical(prob)
+        action = dist.sample()
         return action, to_numpy(mask)
 
     def action_batch_convert(self, mask_batch, action_batch):
-        y = self.data_set.system_manager._y
-
         logprob = []
         entropy = []
 
@@ -132,16 +130,13 @@ class DAGEnv (gym.Env):
             mask = to_tensor(mask_batch[i])
             masked_action = torch.where(action_batch[i] > mask, mask, action_batch[i])
             prob = nn.functional.softmax(masked_action, dim=-1)
-            dist = Categorical(prob)
+            dist = OneHotCategorical(prob)
             action = dist.sample()
             logprob.append(dist.log_prob(action))
             entropy.append(dist.entropy())
 
         logprob = torch.stack(logprob)
         entropy = torch.stack(entropy)
-
-        self.data_set.system_manager.set_y_mat(y)
-
         return logprob, entropy
 
     def PrintState(self, state):

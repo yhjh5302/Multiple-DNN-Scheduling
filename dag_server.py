@@ -93,6 +93,7 @@ class SystemManager():
                 self.container_arrival[container.id] = self.service_arrival[timeslot][svc.id]
 
     def get_next_state(self, mat_y):
+        curr_c_id = np.where(mat_y == self.cloud_id)[0]
         self.set_y_mat(mat_y)
         next_state = np.zeros((self.NUM_CHANNEL, self.num_servers, self.num_containers))
         for c_id, s_id in enumerate(self._y):
@@ -112,10 +113,10 @@ class SystemManager():
             # 6: server remaining energy
             next_state[6,s_id,:] = (self.server[s_id].get_energy() - self.server[s_id].energy_consumption()) / 100
         for c_id, s_id in enumerate(self._y): # from deployed containers
-            for container in range(self.num_containers): # this container have this transmission delay
-                # 7~: dependency between containers & bandwidth between servers
-                if self.service_set.container_set[c_id] in self.service_set.container_set[container].predecessors:
-                    next_state[7+container,s_id,c_id] = self.net_manager.communication(self.service_set.container_set[c_id].output_data_size, self.service_set.container_set[container]._y, self.service_set.container_set[c_id]._y, self)
+            if len(curr_c_id) and self.service_set.container_set[c_id] in self.service_set.container_set[curr_c_id[0]].predecessors:
+                next_state[7,s_id,c_id] = self.net_manager.communication(self.service_set.container_set[c_id].output_data_size, self.service_set.container_set[c_id]._y, self.service_set.container_set[curr_c_id[0]]._y, self)
+            if len(curr_c_id) and self.service_set.container_set[c_id] in self.service_set.container_set[curr_c_id[0]].successors:
+                next_state[7,s_id,c_id] = self.net_manager.communication(self.service_set.container_set[curr_c_id[0]].output_data_size, self.service_set.container_set[curr_c_id[0]]._y, self.service_set.container_set[c_id]._y, self)
         return next_state
 
     def total_time(self):  # use  todo: add transmission
