@@ -8,13 +8,15 @@ from A3C.worker import Worker
 
 
 class A3CAgent:
-    def __init__(self, env, gamma, p_lr, v_lr, global_max_episode):
+    def __init__(self, env, gamma, p_lr, v_lr, buffer_size, batch_size, global_max_episode):
         mp.set_start_method('spawn')
         self.env = env
 
         self.gamma = gamma
         self.p_lr = p_lr
         self.v_lr = v_lr
+        self.buffer_size = buffer_size
+        self.batch_size = batch_size
         self.global_episode = mp.Value('i', 0)
         self.GLOBAL_MAX_EPISODE = global_max_episode
 
@@ -32,14 +34,16 @@ class A3CAgent:
         self.global_value_network.share_memory()
         self.global_value_optimizer = optim.Adam(self.global_value_network.parameters(), lr=v_lr)
         
-        self.workers = [Worker(i, env, self.gamma, self.global_policy_network, self.global_value_network, self.global_policy_optimizer, self.global_value_optimizer, self.global_episode, self.GLOBAL_MAX_EPISODE) for i in range(1)]
-    
+        #self.workers = [Worker(i, env, self.gamma, buffer_size, batch_size, self.global_policy_network, self.global_value_network, self.global_policy_optimizer, self.global_value_optimizer, self.global_episode, self.GLOBAL_MAX_EPISODE) for i in range(1)]
+        self.worker = Worker(0, env, self.gamma, buffer_size, batch_size, self.global_policy_network, self.global_value_network, self.global_policy_optimizer, self.global_value_optimizer, self.global_episode, self.GLOBAL_MAX_EPISODE)
+
     def train(self):
-        print("Training on {} cores and {} workers".format(mp.cpu_count(), len(self.workers)))
+        #print("Training on {} cores and {} workers".format(mp.cpu_count(), len(self.workers)))
         #input("Enter to start")
 
-        [worker.start() for worker in self.workers]
-        [worker.join() for worker in self.workers]
+        #[worker.start() for worker in self.workers]
+        #[worker.join() for worker in self.workers]
+        self.worker.run()
     
     def save_model(self):
         torch.save(self.global_policy_network.state_dict(), "a3c_policy_model.pth")

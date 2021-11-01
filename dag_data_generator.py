@@ -11,7 +11,7 @@ class DAGDataSet:
     def create_arrival_rate(self, num_services, minimum, maximum):
         return minimum + (maximum - minimum) * np.random.random(num_services)
 
-    def data_gen(self, num_services=5, max_partitions=1, deadline_opt=(10, 20), num_edges=8, num_fogs=1, num_clouds=1,
+    def data_gen(self, num_services=5, max_partitions=1, deadline_opt=(10, 20), num_edges=7, num_fogs=2, num_clouds=1,
                 ipc=(10**12), B_gw=1024*25, B_fog=1024*10, B_cl=1024*5, P_dd_opt=(0.5,1)):
         # ipc -> TFLOPS
         # create system manager
@@ -33,8 +33,8 @@ class DAGDataSet:
         self.num_containers = len(svc_set.container_set)
 
         # create arrival rate table
-        self.max_arrival = 30
-        self.min_arrival = 30
+        self.max_arrival = 50
+        self.min_arrival = 10
 
         svc_arrival = list()
         for t in range(self.max_timeslot):
