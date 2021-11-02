@@ -7,15 +7,17 @@ class ContainerPolicyNetwork(nn.Module):
     def __init__(self, input_dim, num_containers, num_servers):
         super(ContainerPolicyNetwork, self).__init__()
         self.conv = nn.Sequential(
-                        nn.Conv2d(in_channels=input_dim, out_channels=96, kernel_size=(3,6), stride=1, padding=1),
+                        nn.Conv2d(in_channels=input_dim, out_channels=64, kernel_size=(5,10), stride=1, padding=2),
                         nn.ReLU(),
-                        nn.Conv2d(in_channels=96, out_channels=96, kernel_size=(3,6), stride=1, padding=0),
+                        nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(5,10), stride=1, padding=1),
                         nn.ReLU(),
-                        nn.Conv2d(in_channels=96, out_channels=96, kernel_size=(3,6), stride=1, padding=0),
+                        nn.Conv2d(in_channels=64, out_channels=128, kernel_size=(4,8), stride=1, padding=1),
+                        nn.ReLU(),
+                        nn.Conv2d(in_channels=128, out_channels=128, kernel_size=(3,6), stride=1, padding=1),
                         nn.ReLU(),
                     )
 
-        self.actor_container_fc1 = nn.Linear(17*6*96, 4096)
+        self.actor_container_fc1 = nn.Linear(7*10*128, 4096)
         self.actor_container_fc2 = nn.Linear(4096, 4096)
         self.actor_container_fc3 = nn.Linear(4096, 4096)
         self.actor_container_fc4 = nn.Linear(4096, num_containers)
@@ -23,7 +25,7 @@ class ContainerPolicyNetwork(nn.Module):
         self.relu = nn.ReLU()
         self.tanh = nn.Tanh()
         self.softplus = nn.Softplus()
-        self.dropout = nn.Dropout(p=0.2)
+        self.dropout = nn.Dropout(p=0.5)
 
     def forward(self, state):
         x = self.conv(state)
@@ -49,15 +51,17 @@ class ServerPolicyNetwork(nn.Module):
     def __init__(self, input_dim, num_containers, num_servers):
         super(ServerPolicyNetwork, self).__init__()
         self.conv = nn.Sequential(
-                        nn.Conv2d(in_channels=input_dim, out_channels=96, kernel_size=(3,6), stride=1, padding=1),
+                        nn.Conv2d(in_channels=input_dim, out_channels=64, kernel_size=(5,10), stride=1, padding=2),
                         nn.ReLU(),
-                        nn.Conv2d(in_channels=96, out_channels=96, kernel_size=(3,6), stride=1, padding=0),
+                        nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(5,10), stride=1, padding=1),
                         nn.ReLU(),
-                        nn.Conv2d(in_channels=96, out_channels=96, kernel_size=(3,6), stride=1, padding=0),
+                        nn.Conv2d(in_channels=64, out_channels=128, kernel_size=(4,8), stride=1, padding=1),
+                        nn.ReLU(),
+                        nn.Conv2d(in_channels=128, out_channels=128, kernel_size=(3,6), stride=1, padding=1),
                         nn.ReLU(),
                     )
 
-        self.actor_server_fc1 = nn.Linear(17*6*96+num_containers, 4096)
+        self.actor_server_fc1 = nn.Linear(7*10*128+num_containers, 4096)
         self.actor_server_fc2 = nn.Linear(4096, 4096)
         self.actor_server_fc3 = nn.Linear(4096, 4096)
         self.actor_server_fc4 = nn.Linear(4096, num_servers)
@@ -65,7 +69,7 @@ class ServerPolicyNetwork(nn.Module):
         self.relu = nn.ReLU()
         self.tanh = nn.Tanh()
         self.softplus = nn.Softplus()
-        self.dropout = nn.Dropout(p=0.2)
+        self.dropout = nn.Dropout(p=0.5)
 
     def forward(self, state, container_action):
         x = self.conv(state)
@@ -91,15 +95,17 @@ class ValueNetwork(nn.Module):
     def __init__(self, input_dim, num_containers, num_servers):
         super(ValueNetwork, self).__init__()
         self.conv = nn.Sequential(
-                        nn.Conv2d(in_channels=input_dim, out_channels=96, kernel_size=(3,6), stride=1, padding=1),
+                        nn.Conv2d(in_channels=input_dim, out_channels=64, kernel_size=(5,10), stride=1, padding=2),
                         nn.ReLU(),
-                        nn.Conv2d(in_channels=96, out_channels=96, kernel_size=(3,6), stride=1, padding=0),
+                        nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(5,10), stride=1, padding=1),
                         nn.ReLU(),
-                        nn.Conv2d(in_channels=96, out_channels=96, kernel_size=(3,6), stride=1, padding=0),
+                        nn.Conv2d(in_channels=64, out_channels=128, kernel_size=(4,8), stride=1, padding=1),
+                        nn.ReLU(),
+                        nn.Conv2d(in_channels=128, out_channels=128, kernel_size=(3,6), stride=1, padding=1),
                         nn.ReLU(),
                     )
 
-        self.critic_fc1 = nn.Linear(17*6*96+num_containers+num_servers, 4096)
+        self.critic_fc1 = nn.Linear(7*10*128+num_containers+num_servers, 4096)
         self.critic_fc2 = nn.Linear(4096, 4096)
         self.critic_fc3 = nn.Linear(4096, 4096)
         self.critic_fc4 = nn.Linear(4096, 1)
@@ -107,7 +113,7 @@ class ValueNetwork(nn.Module):
         self.relu = nn.ReLU()
         self.tanh = nn.Tanh()
         self.softplus = nn.Softplus()
-        self.dropout = nn.Dropout(p=0.2)
+        self.dropout = nn.Dropout(p=0.5)
 
     def forward(self, state, action):
         x = self.conv(state)

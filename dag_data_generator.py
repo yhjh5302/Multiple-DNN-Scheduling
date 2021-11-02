@@ -33,8 +33,8 @@ class DAGDataSet:
         self.num_containers = len(svc_set.container_set)
 
         # create arrival rate table
-        self.max_arrival = 30
-        self.min_arrival = 30
+        self.max_arrival = 50
+        self.min_arrival = 10
 
         svc_arrival = list()
         for t in range(self.max_timeslot):

@@ -2,21 +2,23 @@ import numpy as np
 import torch
 import torch.nn.functional as F 
 import torch.multiprocessing as mp
-import pyro
 from pyro.distributions import Categorical
 
 from A3C.models import ContainerPolicyNetwork, ServerPolicyNetwork, ValueNetwork
 from util import *
+import random
 
 
 class Worker(mp.Process):
-    def __init__(self, id, env, gamma, global_container_policy_network, global_container_policy_optimizer, global_server_policy_network, global_server_policy_optimizer, global_value_network, global_value_optimizer, global_episode, GLOBAL_MAX_EPISODE):
+    def __init__(self, id, env, gamma, buffer_size, batch_size, global_container_policy_network, global_container_policy_optimizer, global_server_policy_network, global_server_policy_optimizer, global_value_network, global_value_optimizer, global_episode, GLOBAL_MAX_EPISODE):
         super(Worker, self).__init__()
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.name = "w%i" % id
         
         self.env = env
         self.env.seed(id)
+        self.buffer_size = buffer_size
+        self.batch_size = batch_size
 
         self.obs_dim = self.env.data_set.system_manager.NUM_CHANNEL
         self.action_dim = self.env.data_set.num_servers
@@ -145,14 +147,13 @@ class Worker(mp.Process):
 
                 value_loss, container_policy_loss, server_policy_loss = self.update_global(trajectory)
                 self.sync_with_global()
+                trajectory = []
 
-                print(self.name + " | #{} episode - avg_reward: {:.3f}, value_loss: {:.3f}, container_policy_loss: {:.3f}, server_policy_loss: {:.3f}".format(self.global_episode.value, episode_reward / step, value_loss, container_policy_loss, server_policy_loss))
+                print(self.name + " | #{} episode - avg_reward: {:.3f}".format(self.global_episode.value, episode_reward / self.env.max_step))
                 print("Y:", self.env.get_y(), "reward:", reward)
                 #self.env.PrintState(state)
 
-                trajectory = []
                 episode_reward = 0
-                step = 0
                 state = self.env.reset()
             else:
                 state = next_state

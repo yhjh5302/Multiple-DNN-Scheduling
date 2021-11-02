@@ -144,7 +144,8 @@ class DAGEnv (gym.Env):
 
         for i, y in enumerate(y_batch):
             # action masking
-            masked_action = to_tensor(np.where(y == self.data_set.system_manager.cloud_id, to_numpy(container_logits_batch[i]), float('-inf')))
+            mask = to_tensor(np.array([-np.inf for _ in range(self.data_set.num_containers)]))
+            masked_action = torch.where(to_tensor(y) == self.data_set.system_manager.cloud_id, container_logits_batch[i], mask)
             if not False in torch.isinf(masked_action):
                 masked_action = container_logits_batch[i]
 

@@ -4,7 +4,7 @@ import math
 import numpy as np
 
 
-COMP_RATIO = 100*(10**6) # computation per input data (50 MFLOPS)
+COMP_RATIO = 50*(10**6) # computation per input data (50 MFLOPS)
 MEM_RATIO = 1024 # memory usage per input data (1 KB)
 
 
@@ -253,8 +253,8 @@ class Service:
     # for the datagenerator, create dag reculsively
     def create_partitions(self, opt=(1, ((0, 3), (0, 4)))):
         #print("partition", opt)
-        input_data_size = random.randint(64, 1024) # 64KB~1MB
-        output_data_size = random.randint(64, 1024) # 64KB~1MB
+        input_data_size = random.randint(256, 1024) # 64KB~1MB
+        output_data_size = random.randint(256, 1024) # 64KB~1MB
         computation_amount = input_data_size * COMP_RATIO
         memory = input_data_size * MEM_RATIO
         first_partition = Container(input_data_size, output_data_size, computation_amount, memory)
