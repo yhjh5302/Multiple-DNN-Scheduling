@@ -20,45 +20,33 @@ class PolicyNetwork(nn.Module):
         self.actor_fc = nn.Sequential(
                         nn.Linear(7*10*128, 4096),
                         nn.ReLU(),
-                        nn.Dropout(p=0.2),
                         nn.Linear(4096, 4096),
                         nn.ReLU(),
-                        nn.Dropout(p=0.2),
                         nn.Linear(4096, 4096),
                         nn.ReLU(),
-                        nn.Dropout(p=0.2),
                         nn.Linear(4096, 4096),
                         nn.ReLU(),
-                        nn.Dropout(p=0.2),
                         nn.Linear(4096, 2048),
                         nn.ReLU(),
-                        nn.Dropout(p=0.2),
                         nn.Linear(2048, 2048),
                         nn.ReLU(),
-                        nn.Dropout(p=0.2),
                         nn.Linear(2048, 2048),
                         nn.ReLU(),
-                        nn.Dropout(p=0.2),
                         nn.Linear(2048, 2048),
                         nn.ReLU(),
-                        nn.Dropout(p=0.2),
                         nn.Linear(2048, 2048),
                         nn.ReLU(),
-                        nn.Dropout(p=0.2),
                         nn.Linear(2048, 2048),
                         nn.ReLU(),
-                        nn.Dropout(p=0.2),
                         nn.Linear(2048, output_dim),
                     )
         
         self.relu = nn.ReLU()
         self.tanh = nn.Tanh()
         self.softplus = nn.Softplus()
-        self.dropout = nn.Dropout(p=0.2)
 
     def forward(self, state):
         x = self.conv(state)
-        x = self.dropout(x)
         x = torch.flatten(x, 1)
         logits = self.actor_fc(x)
         return logits
@@ -105,11 +93,9 @@ class ValueNetwork(nn.Module):
         self.relu = nn.ReLU()
         self.tanh = nn.Tanh()
         self.softplus = nn.Softplus()
-        self.dropout = nn.Dropout(p=0.5)
 
     def forward(self, state):
         x = self.conv(state)
-        x = self.dropout(x)
         x = torch.flatten(x, 1)
         values = self.critic_fc(x)
         return values
