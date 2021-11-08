@@ -11,9 +11,9 @@ def train(env, gamma, plr, vlr, GLOBAL_MAX_EPISODE):
 
 if __name__ == "__main__":
     gamma = 0.99
-    vlr = 5e-6
-    plr = 5e-6
-    GLOBAL_MAX_STEP = 64
+    vlr = 1e-6
+    plr = 1e-6
+    GLOBAL_MAX_STEP = 200
     GLOBAL_MAX_TIMESLOT = 1
     GLOBAL_MAX_EPISODE = 100000
 

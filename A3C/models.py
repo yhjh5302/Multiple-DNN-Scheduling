@@ -17,33 +17,50 @@ class PolicyNetwork(nn.Module):
                         nn.ReLU(),
                     )
 
-        self.actor_fc1 = nn.Linear(7*10*128, 4096)
-        self.actor_fc2 = nn.Linear(4096, 4096)
-        self.actor_fc3 = nn.Linear(4096, 4096)
-        self.actor_fc4 = nn.Linear(4096, output_dim)
+        self.actor_fc = nn.Sequential(
+                        nn.Linear(7*10*128, 4096),
+                        nn.ReLU(),
+                        nn.Dropout(p=0.2),
+                        nn.Linear(4096, 4096),
+                        nn.ReLU(),
+                        nn.Dropout(p=0.2),
+                        nn.Linear(4096, 4096),
+                        nn.ReLU(),
+                        nn.Dropout(p=0.2),
+                        nn.Linear(4096, 4096),
+                        nn.ReLU(),
+                        nn.Dropout(p=0.2),
+                        nn.Linear(4096, 2048),
+                        nn.ReLU(),
+                        nn.Dropout(p=0.2),
+                        nn.Linear(2048, 2048),
+                        nn.ReLU(),
+                        nn.Dropout(p=0.2),
+                        nn.Linear(2048, 2048),
+                        nn.ReLU(),
+                        nn.Dropout(p=0.2),
+                        nn.Linear(2048, 2048),
+                        nn.ReLU(),
+                        nn.Dropout(p=0.2),
+                        nn.Linear(2048, 2048),
+                        nn.ReLU(),
+                        nn.Dropout(p=0.2),
+                        nn.Linear(2048, 2048),
+                        nn.ReLU(),
+                        nn.Dropout(p=0.2),
+                        nn.Linear(2048, output_dim),
+                    )
         
         self.relu = nn.ReLU()
         self.tanh = nn.Tanh()
         self.softplus = nn.Softplus()
-        self.dropout = nn.Dropout(p=0.5)
+        self.dropout = nn.Dropout(p=0.2)
 
     def forward(self, state):
         x = self.conv(state)
         x = self.dropout(x)
-
         x = torch.flatten(x, 1)
-
-        logits = self.actor_fc1(x)
-        logits = self.relu(logits)
-        logits = self.dropout(logits)
-        logits = self.actor_fc2(logits)
-        logits = self.relu(logits)
-        logits = self.dropout(logits)
-        logits = self.actor_fc3(logits)
-        logits = self.relu(logits)
-        logits = self.dropout(logits)
-        logits = self.actor_fc4(logits)
-
+        logits = self.actor_fc(x)
         return logits
 
 
@@ -61,31 +78,48 @@ class ValueNetwork(nn.Module):
                         nn.ReLU(),
                     )
 
-        self.critic_fc1 = nn.Linear(7*10*128, 4096)
-        self.critic_fc2 = nn.Linear(4096, 4096)
-        self.critic_fc3 = nn.Linear(4096, 4096)
-        self.critic_fc4 = nn.Linear(4096, 1)
+        self.critic_fc = nn.Sequential(
+                        nn.Linear(7*10*128, 4096),
+                        nn.ReLU(),
+                        nn.Dropout(p=0.2),
+                        nn.Linear(4096, 4096),
+                        nn.ReLU(),
+                        nn.Dropout(p=0.2),
+                        nn.Linear(4096, 4096),
+                        nn.ReLU(),
+                        nn.Dropout(p=0.2),
+                        nn.Linear(4096, 4096),
+                        nn.ReLU(),
+                        nn.Dropout(p=0.2),
+                        nn.Linear(4096, 2048),
+                        nn.ReLU(),
+                        nn.Dropout(p=0.2),
+                        nn.Linear(2048, 2048),
+                        nn.ReLU(),
+                        nn.Dropout(p=0.2),
+                        nn.Linear(2048, 2048),
+                        nn.ReLU(),
+                        nn.Dropout(p=0.2),
+                        nn.Linear(2048, 2048),
+                        nn.ReLU(),
+                        nn.Dropout(p=0.2),
+                        nn.Linear(2048, 2048),
+                        nn.ReLU(),
+                        nn.Dropout(p=0.2),
+                        nn.Linear(2048, 2048),
+                        nn.ReLU(),
+                        nn.Dropout(p=0.2),
+                        nn.Linear(2048, 1),
+                    )
         
         self.relu = nn.ReLU()
         self.tanh = nn.Tanh()
         self.softplus = nn.Softplus()
-        self.dropout = nn.Dropout(p=0.5)
+        self.dropout = nn.Dropout(p=0.2)
 
     def forward(self, state):
         x = self.conv(state)
         x = self.dropout(x)
-
         x = torch.flatten(x, 1)
-
-        values = self.critic_fc1(x)
-        values = self.relu(values)
-        values = self.dropout(values)
-        values = self.critic_fc2(values)
-        values = self.relu(values)
-        values = self.dropout(values)
-        values = self.critic_fc3(values)
-        values = self.relu(values)
-        values = self.dropout(values)
-        values = self.critic_fc4(values)
-
+        values = self.critic_fc(x)
         return values
