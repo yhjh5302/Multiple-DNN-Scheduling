@@ -81,41 +81,31 @@ class ValueNetwork(nn.Module):
         self.critic_fc = nn.Sequential(
                         nn.Linear(7*10*128, 4096),
                         nn.ReLU(),
-                        nn.Dropout(p=0.2),
                         nn.Linear(4096, 4096),
                         nn.ReLU(),
-                        nn.Dropout(p=0.2),
                         nn.Linear(4096, 4096),
                         nn.ReLU(),
-                        nn.Dropout(p=0.2),
                         nn.Linear(4096, 4096),
                         nn.ReLU(),
-                        nn.Dropout(p=0.2),
                         nn.Linear(4096, 2048),
                         nn.ReLU(),
-                        nn.Dropout(p=0.2),
                         nn.Linear(2048, 2048),
                         nn.ReLU(),
-                        nn.Dropout(p=0.2),
                         nn.Linear(2048, 2048),
                         nn.ReLU(),
-                        nn.Dropout(p=0.2),
                         nn.Linear(2048, 2048),
                         nn.ReLU(),
-                        nn.Dropout(p=0.2),
                         nn.Linear(2048, 2048),
                         nn.ReLU(),
-                        nn.Dropout(p=0.2),
                         nn.Linear(2048, 2048),
                         nn.ReLU(),
-                        nn.Dropout(p=0.2),
                         nn.Linear(2048, 1),
                     )
         
         self.relu = nn.ReLU()
         self.tanh = nn.Tanh()
         self.softplus = nn.Softplus()
-        self.dropout = nn.Dropout(p=0.2)
+        self.dropout = nn.Dropout(p=0.5)
 
     def forward(self, state):
         x = self.conv(state)
