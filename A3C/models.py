@@ -3,9 +3,9 @@ import torch.nn as nn
 import numpy as np
 
 
-class ContainerPolicyNetwork(nn.Module):
-    def __init__(self, input_dim, num_containers, num_servers):
-        super(ContainerPolicyNetwork, self).__init__()
+class PolicyNetwork(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super(PolicyNetwork, self).__init__()
         self.conv = nn.Sequential(
                         nn.Conv2d(in_channels=input_dim, out_channels=64, kernel_size=(5,10), stride=1, padding=2),
                         nn.ReLU(),
@@ -17,10 +17,10 @@ class ContainerPolicyNetwork(nn.Module):
                         nn.ReLU(),
                     )
 
-        self.actor_container_fc1 = nn.Linear(7*10*128, 4096)
-        self.actor_container_fc2 = nn.Linear(4096, 4096)
-        self.actor_container_fc3 = nn.Linear(4096, 4096)
-        self.actor_container_fc4 = nn.Linear(4096, num_containers)
+        self.actor_fc1 = nn.Linear(7*10*128, 4096)
+        self.actor_fc2 = nn.Linear(4096, 4096)
+        self.actor_fc3 = nn.Linear(4096, 4096)
+        self.actor_fc4 = nn.Linear(4096, output_dim)
         
         self.relu = nn.ReLU()
         self.tanh = nn.Tanh()
@@ -33,66 +33,22 @@ class ContainerPolicyNetwork(nn.Module):
 
         x = torch.flatten(x, 1)
 
-        container_logits = self.actor_container_fc1(x)
-        container_logits = self.relu(container_logits)
-        container_logits = self.dropout(container_logits)
-        container_logits = self.actor_container_fc2(container_logits)
-        container_logits = self.relu(container_logits)
-        container_logits = self.dropout(container_logits)
-        container_logits = self.actor_container_fc3(container_logits)
-        container_logits = self.relu(container_logits)
-        container_logits = self.dropout(container_logits)
-        container_logits = self.actor_container_fc4(container_logits)
+        logits = self.actor_fc1(x)
+        logits = self.relu(logits)
+        logits = self.dropout(logits)
+        logits = self.actor_fc2(logits)
+        logits = self.relu(logits)
+        logits = self.dropout(logits)
+        logits = self.actor_fc3(logits)
+        logits = self.relu(logits)
+        logits = self.dropout(logits)
+        logits = self.actor_fc4(logits)
 
-        return container_logits
-
-
-class ServerPolicyNetwork(nn.Module):
-    def __init__(self, input_dim, num_containers, num_servers):
-        super(ServerPolicyNetwork, self).__init__()
-        self.conv = nn.Sequential(
-                        nn.Conv2d(in_channels=input_dim, out_channels=64, kernel_size=(5,10), stride=1, padding=2),
-                        nn.ReLU(),
-                        nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(5,10), stride=1, padding=1),
-                        nn.ReLU(),
-                        nn.Conv2d(in_channels=64, out_channels=128, kernel_size=(4,8), stride=1, padding=1),
-                        nn.ReLU(),
-                        nn.Conv2d(in_channels=128, out_channels=128, kernel_size=(3,6), stride=1, padding=1),
-                        nn.ReLU(),
-                    )
-
-        self.actor_server_fc1 = nn.Linear(7*10*128+num_containers, 4096)
-        self.actor_server_fc2 = nn.Linear(4096, 4096)
-        self.actor_server_fc3 = nn.Linear(4096, 4096)
-        self.actor_server_fc4 = nn.Linear(4096, num_servers)
-        
-        self.relu = nn.ReLU()
-        self.tanh = nn.Tanh()
-        self.softplus = nn.Softplus()
-        self.dropout = nn.Dropout(p=0.5)
-
-    def forward(self, state, container_action):
-        x = self.conv(state)
-        x = self.dropout(x)
-
-        x = torch.flatten(x, 1)
-
-        server_logits = self.actor_server_fc1(torch.cat([x, container_action], 1))
-        server_logits = self.relu(server_logits)
-        server_logits = self.dropout(server_logits)
-        server_logits = self.actor_server_fc2(server_logits)
-        server_logits = self.relu(server_logits)
-        server_logits = self.dropout(server_logits)
-        server_logits = self.actor_server_fc3(server_logits)
-        server_logits = self.relu(server_logits)
-        server_logits = self.dropout(server_logits)
-        server_logits = self.actor_server_fc4(server_logits)
-
-        return server_logits
+        return logits
 
 
 class ValueNetwork(nn.Module):
-    def __init__(self, input_dim, num_containers, num_servers):
+    def __init__(self, input_dim):
         super(ValueNetwork, self).__init__()
         self.conv = nn.Sequential(
                         nn.Conv2d(in_channels=input_dim, out_channels=64, kernel_size=(5,10), stride=1, padding=2),
@@ -105,7 +61,7 @@ class ValueNetwork(nn.Module):
                         nn.ReLU(),
                     )
 
-        self.critic_fc1 = nn.Linear(7*10*128+num_containers+num_servers, 4096)
+        self.critic_fc1 = nn.Linear(7*10*128, 4096)
         self.critic_fc2 = nn.Linear(4096, 4096)
         self.critic_fc3 = nn.Linear(4096, 4096)
         self.critic_fc4 = nn.Linear(4096, 1)
@@ -115,13 +71,13 @@ class ValueNetwork(nn.Module):
         self.softplus = nn.Softplus()
         self.dropout = nn.Dropout(p=0.5)
 
-    def forward(self, state, action):
+    def forward(self, state):
         x = self.conv(state)
         x = self.dropout(x)
 
         x = torch.flatten(x, 1)
 
-        values = self.critic_fc1(torch.cat([x, action], 1))
+        values = self.critic_fc1(x)
         values = self.relu(values)
         values = self.dropout(values)
         values = self.critic_fc2(values)

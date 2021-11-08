@@ -23,7 +23,7 @@ class DAGEnv (gym.Env):
         self.cur_step = 0
         self.max_step = max_step
 
-        self.action = np.zeros(self.data_set.num_servers)
+        self.action = np.zeros(self.data_set.num_containers * 3)
         self.state = self.reset()
         self.action_space = gym.spaces.Box(low=0, high=np.inf, shape=(self.action.shape[0], ), dtype=np.int64)
         self.observation_space = gym.spaces.Box(low=0, high=np.inf, shape=(self.state.flatten().shape[0], ), dtype=np.int64)
@@ -35,7 +35,7 @@ class DAGEnv (gym.Env):
 
     def next_step(self, action):
         y = self.data_set.system_manager._y
-        y[action[0]] = action[1]
+        y = np.clip(y + action - 1, 0, 9)
         self.state = self.data_set.system_manager.get_next_state(y)
         reward = self.get_reward()
 
@@ -63,7 +63,7 @@ class DAGEnv (gym.Env):
             utility_factor += self.data_set.system_manager.service_arrival[self.cur_timeslot][n] / T_n[n] / total_arrival * self.data_set.max_arrival
 
         energy_factor = []
-        for id, d in self.data_set.system_manager.edge.items():
+        for d in self.data_set.system_manager.edge.values():
             E_d = d.energy_consumption()
             E_d_hat = d._energy
             energy_factor.append(E_d_hat / E_d)
@@ -72,6 +72,9 @@ class DAGEnv (gym.Env):
         reward = energy_factor + utility_factor
         #print("energy_factor", energy_factor)
         #print("utility_factor", utility_factor)
+        for s in self.data_set.system_manager.server.values():
+            if s.constraint_chk() == False:
+                reward -= self.data_set.max_arrival
         return reward
 
     def calc_utility(self, T_n):
@@ -93,110 +96,12 @@ class DAGEnv (gym.Env):
         else:
             self.cur_timeslot = 0
         self.data_set.system_manager.change_arrival(self.cur_timeslot)
-        for id, e in self.data_set.system_manager.edge.items():
+        for e in self.data_set.system_manager.edge.values():
             e.energy_update()
 
     def after_episode(self):
-        for id, e in self.data_set.system_manager.edge.items():
+        for e in self.data_set.system_manager.edge.values():
             e._energy = 100.
-
-    def get_mask(self, c_id):
-        cloud_id = self.data_set.system_manager.cloud_id
-        system_manager = self.data_set.system_manager
-
-        [system_manager.set_y(c_id, s_id) for s_id in system_manager.server]
-        mask = [s.constraint_chk() for s in system_manager.server.values()]
-        [system_manager.reset_y(c_id, s_id, cloud_id) for s_id in system_manager.server]
-
-        mask[cloud_id] = -np.inf
-        return np.array(mask)
-    
-    def get_current_c_id(self, state):
-        return np.where(state[0,self.data_set.system_manager.cloud_id,:] == 1)[0][0]
-
-    def container_action_convert(self, container_logits):
-        # action masking
-        masked_action = to_tensor(np.where(self.get_y() == self.data_set.system_manager.cloud_id, to_numpy(container_logits), float('-inf')))
-        if not False in torch.isinf(masked_action):
-            masked_action = container_logits
-
-        # get c_id
-        container_prob = nn.functional.softmax(masked_action, dim=-1)
-        container_dist = OneHotCategorical(container_prob)
-        container_action = container_dist.sample()
-        return container_action
-
-    def server_action_convert(self, server_logits, container_action):
-        # action masking
-        mask = to_tensor(self.get_mask(container_action.flatten().tolist().index(1)))
-        masked_action = torch.where(server_logits > mask, mask, server_logits)
-
-        # get Y
-        server_prob = nn.functional.softmax(masked_action, dim=-1)
-        server_dist = OneHotCategorical(server_prob)
-        server_action = server_dist.sample()
-        return server_action
-
-    def container_action_batch_convert(self, y_batch, container_logits_batch):
-        action = []
-        logprob = []
-        entropy = []
-
-        for i, y in enumerate(y_batch):
-            # action masking
-            mask = to_tensor(np.array([-np.inf for _ in range(self.data_set.num_containers)]))
-            masked_action = torch.where(to_tensor(y) == self.data_set.system_manager.cloud_id, container_logits_batch[i], mask)
-            if not False in torch.isinf(masked_action):
-                masked_action = container_logits_batch[i]
-
-            # get c_id
-            container_prob = nn.functional.softmax(masked_action, dim=-1)
-            container_dist = OneHotCategorical(container_prob)
-            container_action = container_dist.sample()
-            container_logprob = container_dist.log_prob(container_action)
-            container_entropy = container_dist.entropy()
-
-            action.append(container_action)
-            logprob.append(container_logprob)
-            entropy.append(container_entropy)
-
-        action = torch.stack(action)
-        logprob = torch.stack(logprob)
-        entropy = torch.stack(entropy)
-        return action, logprob, entropy
-
-    def server_action_batch_convert(self, y_batch, server_logits_batch, container_action_batch):
-        temp_y = self.get_y()
-
-        action = []
-        logprob = []
-        entropy = []
-
-        for i, y in enumerate(y_batch):
-            self.data_set.system_manager.set_y_mat(y)
-
-            # action masking
-            mask = to_tensor(self.get_mask(container_action_batch[i].flatten().tolist().index(1)))
-            masked_action = torch.where(server_logits_batch[i] > mask, mask, server_logits_batch[i])
-
-            # get Y
-            server_prob = nn.functional.softmax(masked_action, dim=-1)
-            server_dist = OneHotCategorical(server_prob)
-            server_action = server_dist.sample()
-            server_logprob = server_dist.log_prob(server_action)
-            server_entropy = server_dist.entropy()
-
-            action.append(server_action)
-            logprob.append(server_logprob)
-            entropy.append(server_entropy)
-
-        action = torch.stack(action)
-        logprob = torch.stack(logprob)
-        entropy = torch.stack(entropy)
-
-        self.data_set.system_manager.set_y_mat(temp_y)
-
-        return action, logprob, entropy
 
     def PrintState(self, state):
         print("0: which container which server", state[:,0,:,:])

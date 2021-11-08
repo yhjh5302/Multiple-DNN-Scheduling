@@ -428,9 +428,9 @@ class Server:
 
     def constraint_chk(self, *args):
         if self.used_cpu <= self.cpu and self.used_mem <= self.memory and self.energy_consumption() <= self._energy:
-            return np.inf
+            return True
         else:
-            return -np.inf
+            return False
 
     def energy_update(self):
         self._energy -= self.energy_consumption()
