@@ -51,7 +51,7 @@ class DAGDataSet:
 
         device_types = ['tiny', 'small', 'large', 'mobile']
         for i in range(num_edges):
-            device = np.random.choice(device_types, p=[0.1, 0.1, 0.4, 0.4])
+            device = np.random.choice(device_types, p=[0.0, 0.0, 0.5, 0.5])
             if device == 'tiny':
                 cpu = random.randint(3, 5) / 1000 # Tflops
                 mem = random.randint(2, 4) * 1024 * 1024 # KB
@@ -97,7 +97,7 @@ class DAGDataSet:
         system_manager.net_manager = net_manager
         system_manager.num_servers = self.num_servers
         system_manager.num_containers = self.num_containers
-        system_manager.NUM_CHANNEL = 7 + self.num_containers
+        system_manager.NUM_CHANNEL = 8 + self.num_containers
 
         min_x = np.zeros_like(svc_set.container_set)
         for container in svc_set.container_set:

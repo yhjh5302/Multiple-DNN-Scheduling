@@ -72,9 +72,6 @@ class DAGEnv (gym.Env):
         reward = energy_factor + utility_factor
         #print("energy_factor", energy_factor)
         #print("utility_factor", utility_factor)
-        for s in self.data_set.system_manager.server.values():
-            if s.constraint_chk() == False:
-                reward = 0
         return reward
 
     def calc_utility(self, T_n):

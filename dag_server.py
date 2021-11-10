@@ -111,13 +111,15 @@ class SystemManager():
             next_state[5,s_id,:] = (self.mem_resource[s_id] - self.server[s_id].used_mem) / (1024 * 1024 * 1024)
             # 6: server remaining energy
             next_state[6,s_id,:] = (self.server[s_id].get_energy() - self.server[s_id].energy_consumption()) / 100
+            # 7: server constraint_chk
+            next_state[7,s_id,:] = self.server[s_id].constraint_chk()
         for c_id, s_id in enumerate(self._y): # from deployed containers
             for container in range(self.num_containers): # this container have this transmission delay
-                # 7~: dependency between containers & bandwidth between servers
+                # 8~: dependency between containers & bandwidth between servers
                 if self.service_set.container_set[c_id] in self.service_set.container_set[container].predecessors:
-                    next_state[7+container,s_id,c_id] = self.net_manager.communication(self.service_set.container_set[c_id].output_data_size, self.service_set.container_set[c_id]._y, self.service_set.container_set[container]._y, self)
+                    next_state[8+container,s_id,c_id] = self.net_manager.communication(self.service_set.container_set[c_id].output_data_size, self.service_set.container_set[c_id]._y, self.service_set.container_set[container]._y, self)
                 if self.service_set.container_set[c_id] in self.service_set.container_set[container].successors:
-                    next_state[7+container,s_id,c_id] = self.net_manager.communication(self.service_set.container_set[container].output_data_size, self.service_set.container_set[container]._y, self.service_set.container_set[c_id]._y, self)
+                    next_state[8+container,s_id,c_id] = self.net_manager.communication(self.service_set.container_set[container].output_data_size, self.service_set.container_set[container]._y, self.service_set.container_set[c_id]._y, self)
         return next_state
 
     def total_time(self):  # use  todo: add transmission
@@ -226,6 +228,10 @@ class Container:
         # cloud disadvantage
         if not self._y is system_manager.cloud_id:
             T_cp /= 10
+        else:
+            T_cp = float("inf")
+        if not system_manager.server[self._y].constraint_chk():
+            T_cp = float("inf")
         return T_cp
 
     def get_transmission_time(self, system_manager, net_manager): # for state
