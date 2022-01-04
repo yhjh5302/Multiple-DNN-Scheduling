@@ -11,8 +11,8 @@ class DAGDataSet:
     def create_arrival_rate(self, num_services, minimum, maximum):
         return minimum + (maximum - minimum) * np.random.random(num_services)
 
-    def data_gen(self, num_services=5, max_partitions=1, deadline_opt=(10, 20), num_edges=7, num_fogs=2, num_clouds=1,
-                ipc=(10**12), B_gw=1024*25, B_fog=1024*10, B_cl=1024*5, P_dd_opt=(0.5,1)):
+    def data_gen(self, num_services=2, max_partitions=6, deadline_opt=(10, 20), num_edges=5, num_fogs=1, num_clouds=1,
+                ipc=(10**12), B_gw=1024*40, B_fog=1024*10, B_cl=1024*1, P_dd_opt=(0.5,1)):
         # ipc -> TFLOPS
         # create system manager
         system_manager = SystemManager()
@@ -92,12 +92,12 @@ class DAGDataSet:
         net_manager.cal_b_dd()
 
         # init system manager
-        system_manager.set_service_set(svc_set, svc_arrival)
-        system_manager.set_servers(edge, fog, cloud)
         system_manager.net_manager = net_manager
         system_manager.num_servers = self.num_servers
+        system_manager.num_services = self.num_services
         system_manager.num_containers = self.num_containers
-        system_manager.NUM_CHANNEL = 7 + self.num_containers
+        system_manager.set_service_set(svc_set, svc_arrival, self.max_arrival)
+        system_manager.set_servers(edge, fog, cloud)
 
         min_x = np.zeros_like(svc_set.container_set)
         for container in svc_set.container_set:

@@ -13,6 +13,7 @@ class NetworkManager:  # managing data transfer
         self.C = channel_bandwidth
         self.g_wd = channel_gain
         self.sigma_w = gaussian_noise
+        self.B_gw = None
         self.B_fog = None
         self.B_cl = None
         self.B_dd = None
@@ -59,29 +60,43 @@ class SystemManager():
         self.fog = None
         self.edge = None
         self.server = None
-        self.cpu_resource = None
-        self.mem_resource = None
+
+        # service and container info
         self.service_set = None
+
+        # for constraint check
+        self.server_cpu = None
+        self.server_mem = None
+        self.container_cpu = None
+        self.container_mem = None
+        
+        # for network bandwidth and arrival rate
         self.net_manager = None
         self.service_arrival = None
         self.container_arrival = None
+        self.max_arrival = None
+
         self.num_servers = None
+        self.num_services = None
         self.num_containers = None
         self.cloud_id = None
 
-        self.NUM_CHANNEL = None
-        # 0: which container which server
-        # 1: deployed container computation amount
-        # 2: deployed container memory
-        # 3: deployed container arrival rate
-        # 4: server cpu
-        # 5: server memory
-        # 6: server energy
-        # 7~: dependency between containers & bandwidth between servers
+    def get_x(self): # how many resources assigned
+        return self._x
 
-    def set_service_set(self, service_set, arrival):
+    def get_y(self): # which server to be assigned
+        return self._y
+
+    def constraint_chk(self, y, s_id):
+        one_hot_y = np.eye(self.num_servers)[y]
+        cpu_constraint = self.server_cpu[s_id] >= (self.container_cpu @ one_hot_y)[s_id]
+        mem_constraint = self.server_mem[s_id] >= (self.container_mem @ one_hot_y)[s_id]
+        return cpu_constraint & mem_constraint
+
+    def set_service_set(self, service_set, arrival, max_arrival):
         self.service_set = service_set
         self.service_arrival = arrival
+        self.max_arrival = max_arrival
         self.container_arrival = np.zeros(len(self.service_set.container_set), dtype=np.float_)
         for svc in service_set.svc_set:
             for container in svc.partitions:
@@ -91,34 +106,6 @@ class SystemManager():
         for svc in self.service_set.svc_set:
             for container in svc.partitions:
                 self.container_arrival[container.id] = self.service_arrival[timeslot][svc.id]
-
-    def get_next_state(self, mat_y):
-        self.set_y_mat(mat_y)
-        next_state = np.zeros((self.NUM_CHANNEL, self.num_servers, self.num_containers))
-        for c_id, s_id in enumerate(self._y):
-            # 0: which container which server
-            next_state[0,s_id,c_id] = 1
-            # 1: deployed container computation amount
-            next_state[1,:,c_id] = self.service_set.container_set[c_id].computation_amount / (10**12)
-            # 2: deployed container memory
-            next_state[2,:,c_id] = self.service_set.container_set[c_id].memory / (1024 * 1024 * 1024)
-            # 3: deployed container arrival rate
-            next_state[3,:,c_id] = self.container_arrival[c_id] / 50
-        for s_id in range(self.num_servers):
-            # 4: server remaining cpu
-            next_state[4,s_id,:] = (self.cpu_resource[s_id] - self.server[s_id].used_cpu) / (10**12)
-            # 5: server remaining memory
-            next_state[5,s_id,:] = (self.mem_resource[s_id] - self.server[s_id].used_mem) / (1024 * 1024 * 1024)
-            # 6: server remaining energy
-            next_state[6,s_id,:] = (self.server[s_id].get_energy() - self.server[s_id].energy_consumption()) / 100
-        for c_id, s_id in enumerate(self._y): # from deployed containers
-            for container in range(self.num_containers): # this container have this transmission delay
-                # 7~: dependency between containers & bandwidth between servers
-                if self.service_set.container_set[c_id] in self.service_set.container_set[container].predecessors:
-                    next_state[7+container,s_id,c_id] = self.net_manager.communication(self.service_set.container_set[c_id].output_data_size, self.service_set.container_set[c_id]._y, self.service_set.container_set[container]._y, self)
-                if self.service_set.container_set[c_id] in self.service_set.container_set[container].successors:
-                    next_state[7+container,s_id,c_id] = self.net_manager.communication(self.service_set.container_set[container].output_data_size, self.service_set.container_set[container]._y, self.service_set.container_set[c_id]._y, self)
-        return next_state
 
     def total_time(self):  # use  todo: add transmission
         result = np.zeros(len(self.service_set.svc_set), dtype=np.float_)
@@ -132,39 +119,83 @@ class SystemManager():
         self.cloud = cloud
         self.cloud_id = random.choice(list(cloud.keys()))
         self.server = {**edge, **fog, **cloud}
-        self.cpu_resource = np.zeros(len(self.server))
-        self.mem_resource = np.zeros(len(self.server))
+
+        self.server_cpu = np.zeros(self.num_servers)
+        self.server_mem = np.zeros(self.num_servers)
         for id, s in self.server.items():
-            self.cpu_resource[id] = s.cpu
-            self.mem_resource[id] = s.memory
+            self.server_cpu[id] = s.cpu
+            self.server_mem[id] = s.memory
 
     def init_servers(self, X):
-        Y = np.full_like(X, list(self.cloud.keys())[0])
+        Y = np.random.randint(low=0, high=self.num_servers, size=self.num_containers)
         self.set_xy_mat(X, Y)
+
+        self.container_cpu = np.zeros(self.num_containers)
+        self.container_mem = np.zeros(self.num_containers)
+        for container in self.service_set.container_set:
+            self.container_cpu[container.id] = container._x
+            self.container_mem[container.id] = container.memory
         return Y
 
     def set_xy_mat(self, mat_x, mat_y):
-        [s.reset() for id, s in self.server.items()]
+        [s.reset() for s in self.server.values()]
         self._x = np.array(mat_x, dtype=np.float64)
         self._y = np.array(mat_y, dtype=np.int32)
-        for c_id, s_id in enumerate(self._y):
-            self.server[int(s_id)].deploy_one(self.service_set.container_set[c_id], self._x[c_id])
+        for container in self.service_set.container_set:
+            x = self._x[container.id]
+            y = self._y[container.id]
+            container.update_xy(x, y)
+            self.server[y].deploy_one(container)
 
     def set_y_mat(self, mat_y):
-        [s.reset() for id, s in self.server.items()]
+        [s.reset() for s in self.server.values()]
         self._y = np.array(mat_y, dtype=np.int32)
-        for c_id, s_id in enumerate(self._y):
-            self.server[int(s_id)].deploy_one(self.service_set.container_set[c_id], self._x[c_id])
+        for container in self.service_set.container_set:
+            x = self._x[container.id]
+            y = self._y[container.id]
+            container.update_xy(x, y)
+            self.server[y].deploy_one(container)
 
-    def set_y(self, c_id, y):
-        self._y[c_id] = y
-        container = self.service_set.container_set[c_id]
-        self.server[y].deploy_one(container, self._x[c_id])
+    def set_y(self, container, y, prev_y):
+        self._y[container.id] = y
+        self.server[prev_y].undeploy_one(container)
+        container.update_y(y)
+        self.server[y].deploy_one(container)
 
-    def reset_y(self, c_id, y, cloud_id):
-        self._y[c_id] = cloud_id
-        container = self.service_set.container_set[c_id]
-        self.server[y].undeploy_one(container, self._x[c_id], cloud_id)
+    def get_reward(self, timeslot):
+        T_n = self.total_time()
+        # U_n = self.calc_utility(T_n)
+        # print("T_n", T_n)
+        # print("U_n", U_n)
+
+        utility_factor = 0
+        for n in range(self.num_services):
+            utility_factor += self.service_arrival[timeslot][n] / T_n[n]
+
+        energy_factor = []
+        for d in self.edge.values():
+            E_d = d.energy_consumption()
+            E_d_hat = d._energy
+            energy_factor.append(E_d_hat / E_d)
+        energy_factor = np.mean(energy_factor)
+
+        reward = utility_factor + energy_factor
+        # print("energy_factor", energy_factor)
+        # print("utility_factor", utility_factor)
+        return reward
+
+    def calc_utility(self, T_n):
+        U_n = np.zeros(shape=(self.num_services, ))
+        for n, svc in enumerate(self.service_set.svc_set):
+            T_n_hat = svc.deadline
+            alpha = 2
+            if T_n[n] < T_n_hat:
+                U_n[n] = 1
+            elif T_n_hat <= T_n[n] and T_n[n] < alpha * T_n_hat:
+                U_n[n] = 1 - (T_n[n] - T_n_hat) / ((alpha - 1) * T_n_hat)
+            else:
+                U_n[n] = 0
+        return U_n
 
 
 TYPE_CHAIN = 0
@@ -185,6 +216,12 @@ class Container:
         self.predecessors = list()
         self.svc = None
 
+    def get_x(self):
+        return self._x
+
+    def get_y(self):
+        return self._y
+
     def reset_xy(self):
         self._x = None
         self._y = None
@@ -192,6 +229,9 @@ class Container:
     def update_xy(self, x=None, y=None):
         self._y = y
         self._x = x
+
+    def update_y(self, y=None):
+        self._y = y
 
     def service_rate(self):
         return self._x / self.computation_amount
@@ -219,13 +259,17 @@ class Container:
         return TR_m + T_cp
 
     def get_computaion_time(self, system_manager): # for state
-        if self._x is not None and self._x > 0:
+        if self._x != None and self._x > 0:
             T_cp = self.computation_amount / self._x
         else:
             T_cp = float("inf")
         # cloud disadvantage
-        if not self._y is system_manager.cloud_id:
+        if not self._y == system_manager.cloud_id:
             T_cp /= 10
+        else:
+            T_cp = float("inf")
+        if not system_manager.server[self._y].constraint_chk():
+            T_cp = float("inf")
         return T_cp
 
     def get_transmission_time(self, system_manager, net_manager): # for state
@@ -253,8 +297,8 @@ class Service:
     # for the datagenerator, create dag reculsively
     def create_partitions(self, opt=(1, ((0, 3), (0, 4)))):
         #print("partition", opt)
-        input_data_size = random.randint(256, 1024) # 64KB~1MB
-        output_data_size = random.randint(256, 1024) # 64KB~1MB
+        input_data_size = random.randint(64, 512) # 64KB~1MB
+        output_data_size = random.randint(64, 512) # 64KB~1MB
         computation_amount = input_data_size * COMP_RATIO
         memory = input_data_size * MEM_RATIO
         first_partition = Container(input_data_size, output_data_size, computation_amount, memory)
@@ -386,22 +430,19 @@ class Server:
             self.min_energy = 1.0
         if not hasattr(self, "max_energy"):
             self.max_energy = 10.0
-        self.__trans_energy_ratio = 10.  # need reference
 
         for key, value in kwargs.items():
             setattr(self, key, value)
-        self.pushed_lst = deque()
 
     def computing_time(self, container):
-        cpu = self.deployed_container_cpu.get(container.id)
+        cpu = self.deployed_container_cpu[container.id]
         if cpu and cpu > 0.:
-            return container.computation_amount / self.deployed_container_cpu[container.id]
+            return container.computation_amount / cpu
         else:
             return -1.0
 
     def reset(self):
         self.used_cpu = self.used_mem = 0
-        self.pushed_lst.clear()
         while self.deployed_container:
             _, container = self.deployed_container.popitem()
             container.reset_xy()
@@ -410,21 +451,19 @@ class Server:
         if self.deployed_container_mem:
             self.deployed_container_mem.clear()
 
-    def deploy_one(self, container, computing_resource):
+    def deploy_one(self, container):
         self.deployed_container[container.id] = container
-        self.deployed_container_cpu[container.id] = computing_resource
+        self.deployed_container_cpu[container.id] = container._x
         self.deployed_container_mem[container.id] = container.memory
-        self.used_cpu += computing_resource
+        self.used_cpu += container._x
         self.used_mem += container.memory
-        container.update_xy(computing_resource, self.id)
 
-    def undeploy_one(self, container, computing_resource, cloud_id):
+    def undeploy_one(self, container):
         self.deployed_container.pop(container.id)
         self.deployed_container_cpu.pop(container.id)
         self.deployed_container_mem.pop(container.id)
         self.used_cpu = sum(self.deployed_container_cpu.values())
         self.used_mem = sum(self.deployed_container_mem.values())
-        container.update_xy(computing_resource, cloud_id)
 
     def constraint_chk(self, *args):
         if self.used_cpu <= self.cpu and self.used_mem <= self.memory and self.energy_consumption() <= self._energy:
