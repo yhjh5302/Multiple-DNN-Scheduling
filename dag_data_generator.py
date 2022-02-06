@@ -11,7 +11,7 @@ class DAGDataSet:
     def create_arrival_rate(self, num_services, minimum, maximum):
         return minimum + (maximum - minimum) * np.random.random(num_services)
 
-    def data_gen(self, num_services=2, max_partitions=6, deadline_opt=(10, 20), num_edges=5, num_fogs=1, num_clouds=1,
+    def data_gen(self, num_services=1, max_partitions=20, deadline_opt=(10, 20), num_edges=5, num_fogs=1, num_clouds=1,
                 ipc=(10**12), B_gw=1024*40, B_fog=1024*10, B_cl=1024*1, P_dd_opt=(0.5,1)):
         # ipc -> TFLOPS
         # create system manager
@@ -25,12 +25,14 @@ class DAGDataSet:
             svc = Service(deadline)
 
             # create partitions
-            num_partitions = max_partitions
-            svc.create_partitions(opt=(0, ((1, num_partitions), (0, num_partitions), (1, ((0, num_partitions), (0, num_partitions))), (0, 1))))
+            dag_shape = (0, ((1, random.randint(2, max_partitions)), (0, random.randint(1, max_partitions)), (1, ((0, random.randint(1, max_partitions)), (0, random.randint(1, max_partitions)))), (0, 1)))
+            dag_size = svc.calc_service_size(shape=dag_shape) + 1
+            svc.input_data_array = np.zeros(shape=(dag_size, dag_size), dtype=np.int32)
+            svc.create_partitions(dag_shape)
 
             svc_set.add_services(svc)
-        self.num_services = len(svc_set.svc_set)
-        self.num_containers = len(svc_set.container_set)
+        self.num_services = len(svc_set.services)
+        self.num_partitions = len(svc_set.partitions)
 
         # create arrival rate table
         self.max_arrival = 50
@@ -59,8 +61,8 @@ class DAGDataSet:
                 cpu = random.randint(10, 20) / 1000 # Tflops
                 mem = random.randint(2, 8) * 1024 * 1024 # KB
             elif device == 'large':
-                cpu = random.randint(400, 2000) / 1000 # Tflops
-                mem = random.randint(2, 4) * 1024 * 1024 # KB
+                cpu = random.randint(500, 2000) / 1000 # Tflops
+                mem = random.randint(4, 16) * 1024 * 1024 # KB
             elif device == 'mobile':
                 cpu = random.randint(1000, 2000) / 1000 # Tflops
                 mem = random.randint(4, 16) * 1024 * 1024 # KB
@@ -80,7 +82,7 @@ class DAGDataSet:
         noise = 1
         channel_bandwidth = 1024*25
         channel_gain = 1
-        net_manager = NetworkManager(channel_bandwidth, channel_gain, noise)
+        net_manager = NetworkManager(channel_bandwidth, channel_gain, noise, system_manager)
         net_manager.B_gw = B_gw
         net_manager.B_fog = B_fog
         net_manager.B_cl = B_cl
@@ -95,17 +97,17 @@ class DAGDataSet:
         system_manager.net_manager = net_manager
         system_manager.num_servers = self.num_servers
         system_manager.num_services = self.num_services
-        system_manager.num_containers = self.num_containers
+        system_manager.num_partitions = self.num_partitions
         system_manager.set_service_set(svc_set, svc_arrival, self.max_arrival)
         system_manager.set_servers(edge, fog, cloud)
 
-        min_x = np.zeros_like(svc_set.container_set)
-        for container in svc_set.container_set:
-            min_x[container.id] = container.computation_amount * 5
-        system_manager.init_servers(min_x)
+        system_manager.ranku = np.zeros(self.num_partitions)
+        system_manager.calc_average()
+        system_manager.calc_ranku(svc_set.partitions[0])
+
         return svc_set, system_manager
 
 
 if __name__=="__main__":
-    d = DAGDataSet()
+    d = DAGDataSet(max_timeslot=24)
     d.data_gen()

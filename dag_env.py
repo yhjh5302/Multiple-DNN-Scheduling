@@ -1,47 +1,55 @@
 import gym
-from gym.utils import seeding
 from dag_server import *
 from dag_data_generator import *
 from copy import deepcopy
-
-import os
-import multiprocessing as mp
 
 
 class DAGEnv (gym.Env):
     def __init__(self, max_timeslot):
         self.data_set = DAGDataSet(max_timeslot=max_timeslot) # data gen
+        self.scheduling_lst = np.array(sorted(zip(self.data_set.system_manager.ranku, np.arange(self.data_set.num_partitions)), reverse=True), dtype=np.int32)[:,1]
 
+        self.cur_step = 0
+        self.max_step = self.data_set.num_partitions - 1
         self.cur_timeslot = 0
         self.max_timeslot = max_timeslot
 
-        self.action = np.zeros(self.data_set.num_containers * 3)
+        self.action = np.zeros(self.data_set.num_servers) # epsilon greedy placement (+greedy execution order(ranku)), 다른 방법으로 epsilon greedy execution order (+greedy placement)
         self.state = self.reset()
-        self.action_space = gym.spaces.Box(low=0, high=np.inf, shape=(self.action.shape[0], ), dtype=np.int64)
+        self.action_space = gym.spaces.Box(low=0, high=np.inf, shape=(self.action.flatten().shape[0], ), dtype=np.int64)
         self.observation_space = gym.spaces.Box(low=0, high=np.inf, shape=(self.state.flatten().shape[0], ), dtype=np.int64)
 
     def reset(self):
-        y = self.data_set.system_manager.init_servers(self.data_set.system_manager._x)
-        state = self.data_set.system_manager.get_next_state(y)
+        self.cur_step = 0
+        self.cur_timeslot = 0
+        self.data_set.system_manager.init_env(execution_order=self.scheduling_lst)
+        state = self.data_set.system_manager.get_state(next_p_id=self.scheduling_lst[0])
         return state
 
-    def next_step(self, action):
-        y = self.data_set.system_manager._y
-        new_y = np.clip(y + action - 1, 0, 8)
-        self.state = self.data_set.system_manager.get_next_state(new_y)
-        reward = self.get_reward()
+    def step(self, action):
+        self.data_set.system_manager.set_env(cur_p_id=self.cur_step, s_id=action)
+        print(self.cur_step, action)
+        self.state = self.data_set.system_manager.get_state(next_p_id=self.scheduling_lst[self.cur_step+1])
+        reward = self.data_set.system_manager.get_reward(timeslot=self.cur_timeslot)
 
         self.cur_step += 1
         if self.cur_step < self.max_step:
             done = False
         else:
             done = True
+            self.after_episode()
             self.cur_step = 0
         info = {}
         return self.state, reward, done, info
-    
-    def get_y(self):
-        return self.data_set.system_manager._y
+
+    def get_mask(self, p_id):
+        mask = np.zeros(self.data_set.num_servers)
+        for s_id in range(self.data_set.num_servers):
+            self.data_set.system_manager.deployed_server[p_id] = s_id
+            if self.data_set.system_manager.constraint_chk(deployed_server=self.data_set.system_manager.deployed_server, s_id=s_id):
+                mask[s_id] = 1
+        mask[-1] = 0
+        return np.where(mask, 0, -np.inf)
 
     def after_timeslot(self):
         if self.cur_timeslot < self.max_timeslot - 1:
@@ -55,15 +63,3 @@ class DAGEnv (gym.Env):
     def after_episode(self):
         for e in self.data_set.system_manager.edge.values():
             e._energy = 100.
-
-    def PrintState(self, state):
-        print("0: which container which server", state[:,0,:,:])
-        print("1: deployed container computation amount", state[:,1,:,:])
-        print("2: deployed container memory", state[:,2,:,:])
-        print("3: deployed container arrival rate", state[:,3,:,:])
-        print("4: server cpu", state[:,4,:,:])
-        print("5: server memory", state[:,5,:,:])
-        print("6: server energy", state[:,6,:,:])
-        for c_id in range(self.data_set.num_containers):
-            print("7+%d: dependency"%c_id, state[:,7+c_id,:,:])
-        input()
