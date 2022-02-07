@@ -9,13 +9,15 @@ class ValueNetwork(nn.Module):
         self.fc1 = nn.Linear(input_dim, 1024)
         self.fc2 = nn.Linear(1024, 1024)
         self.fc3 = nn.Linear(1024, 1024)
-        self.fc4 = nn.Linear(1024, output_dim)
+        self.fc4 = nn.Linear(1024, 1024)
+        self.fc5 = nn.Linear(1024, output_dim)
 
     def forward(self, state):
         value = F.relu(self.fc1(state))
         value = F.relu(self.fc2(value))
         value = F.relu(self.fc3(value))
-        value = self.fc4(value)
+        value = F.relu(self.fc4(value))
+        value = self.fc5(value)
         return value
 
 
@@ -25,11 +27,13 @@ class PolicyNetwork(nn.Module):
         self.fc1 = nn.Linear(input_dim, 1024)
         self.fc2 = nn.Linear(1024, 1024)
         self.fc3 = nn.Linear(1024, 1024)
-        self.fc4 = nn.Linear(1024, output_dim)
+        self.fc4 = nn.Linear(1024, 1024)
+        self.fc5 = nn.Linear(1024, output_dim)
     
     def forward(self, state):
         logits = F.relu(self.fc1(state))
         logits = F.relu(self.fc2(logits))
         logits = F.relu(self.fc3(logits))
-        logits = self.fc4(logits)
+        logits = F.relu(self.fc4(logits))
+        logits = self.fc5(logits)
         return logits

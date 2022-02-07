@@ -10,7 +10,7 @@ class DAGEnv (gym.Env):
         self.scheduling_lst = np.array(sorted(zip(self.data_set.system_manager.ranku, np.arange(self.data_set.num_partitions)), reverse=True), dtype=np.int32)[:,1]
 
         self.cur_step = 0
-        self.max_step = self.data_set.num_partitions - 1
+        self.max_step = self.data_set.num_partitions
         self.cur_timeslot = 0
         self.max_timeslot = max_timeslot
 
@@ -27,28 +27,28 @@ class DAGEnv (gym.Env):
         return state
 
     def step(self, action):
-        self.data_set.system_manager.set_env(cur_p_id=self.cur_step, s_id=action)
-        print(self.cur_step, action)
-        self.state = self.data_set.system_manager.get_state(next_p_id=self.scheduling_lst[self.cur_step+1])
-        reward = self.data_set.system_manager.get_reward(timeslot=self.cur_timeslot)
+        self.data_set.system_manager.set_env(cur_p_id=self.scheduling_lst[self.cur_step], s_id=action)
+        reward = self.data_set.system_manager.get_reward(cur_p_id=self.scheduling_lst[self.cur_step], timeslot=self.cur_timeslot)
 
         self.cur_step += 1
         if self.cur_step < self.max_step:
             done = False
         else:
             done = True
-            self.after_episode()
             self.cur_step = 0
+        state = self.data_set.system_manager.get_state(next_p_id=self.scheduling_lst[self.cur_step])
         info = {}
-        return self.state, reward, done, info
+        return state, reward, done, info
 
-    def get_mask(self, p_id):
+    def get_mask(self, step):
         mask = np.zeros(self.data_set.num_servers)
+        p_id = self.scheduling_lst[step]
         for s_id in range(self.data_set.num_servers):
             self.data_set.system_manager.deployed_server[p_id] = s_id
             if self.data_set.system_manager.constraint_chk(deployed_server=self.data_set.system_manager.deployed_server, s_id=s_id):
                 mask[s_id] = 1
-        mask[-1] = 0
+        if sum(mask[:-1]) != 0:
+            mask[-1] = 0
         return np.where(mask, 0, -np.inf)
 
     def after_timeslot(self):

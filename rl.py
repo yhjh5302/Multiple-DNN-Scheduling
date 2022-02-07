@@ -21,6 +21,6 @@ if __name__ == "__main__":
 
     gamma = 0.99
     lr = 1e-3
-    GLOBAL_MAX_EPISODE = 10000
+    GLOBAL_MAX_EPISODE = 100000
 
     train(env, gamma, lr, GLOBAL_MAX_EPISODE)

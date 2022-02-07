@@ -53,7 +53,7 @@ class DAGDataSet:
 
         device_types = ['tiny', 'small', 'large', 'mobile']
         for i in range(num_edges):
-            device = np.random.choice(device_types, p=[0.1, 0.1, 0.4, 0.4])
+            device = np.random.choice(device_types, p=[0.0, 0.0, 0.5, 0.5])
             if device == 'tiny':
                 cpu = random.randint(3, 5) / 1000 # Tflops
                 mem = random.randint(2, 4) * 1024 * 1024 # KB
@@ -61,7 +61,7 @@ class DAGDataSet:
                 cpu = random.randint(10, 20) / 1000 # Tflops
                 mem = random.randint(2, 8) * 1024 * 1024 # KB
             elif device == 'large':
-                cpu = random.randint(500, 2000) / 1000 # Tflops
+                cpu = random.randint(1000, 2000) / 1000 # Tflops
                 mem = random.randint(4, 16) * 1024 * 1024 # KB
             elif device == 'mobile':
                 cpu = random.randint(1000, 2000) / 1000 # Tflops

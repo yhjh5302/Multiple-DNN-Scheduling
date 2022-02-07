@@ -29,7 +29,7 @@ class A3CAgent:
         self.global_policy_network.share_memory()
         self.global_policy_optimizer = optim.Adam(self.global_policy_network.parameters(), lr=lr)
         
-        self.workers = [Worker(i, env, self.gamma, self.global_value_network, self.global_policy_network, self.global_value_optimizer, self.global_policy_optimizer, self.global_episode, self.GLOBAL_MAX_EPISODE) for i in range(int(mp.cpu_count() / 8))]
+        self.workers = [Worker(i, env, self.gamma, self.global_value_network, self.global_policy_network, self.global_value_optimizer, self.global_policy_optimizer, self.global_episode, self.GLOBAL_MAX_EPISODE) for i in range(int(mp.cpu_count() / 4))]
     
     def train(self):
         print("Training on {} cores and {} workers".format(mp.cpu_count(), len(self.workers)))

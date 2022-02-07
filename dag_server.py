@@ -126,11 +126,11 @@ class SystemManager():
             self.server_mem[id] = s.memory
 
     def init_env(self, execution_order):
-        deployed_server = np.random.randint(low=0, high=self.num_servers, size=self.num_partitions)
+        deployed_server = np.full(shape=self.num_partitions, fill_value=self.cloud_id)
         self.set_env(deployed_server=deployed_server, execution_order=execution_order)
 
     def set_env(self, deployed_server=None, execution_order=None, cur_p_id=None, s_id=None):
-        if cur_p_id and s_id:
+        if cur_p_id != None and s_id != None:
             self.deployed_server[cur_p_id] = s_id
             deployed_server = self.deployed_server
         if deployed_server is not None:
@@ -146,20 +146,24 @@ class SystemManager():
                 self.service_set.partitions[p_id].update(execution_order=order)
 
     def get_state(self, next_p_id):
+        temp = self.deployed_server[next_p_id]
+
         next_partition = self.service_set.partitions[next_p_id]
         next_state = []
         for s_id, s in self.server.items():
             self.set_env(cur_p_id=next_p_id, s_id=s_id)
             next_state += [
-                1/next_partition.get_completion_time(self.net_manager), # server finish time
+                1 / next_partition.get_completion_time(self.net_manager), # server finish time
                 s.memory / (2**20), # server memory
                 sum(s.deployed_partition_mem.values()) / (2**20), # server memory requirement
                 s.energy / 100, # server energy
                 s.energy_consumption() / 100, # server energy consumption
             ]
+
+        self.deployed_server[next_p_id] = temp
         return np.array(next_state)
 
-    def get_reward(self, timeslot):
+    def get_reward(self, cur_p_id, timeslot):
         T_n = self.total_time()
         # U_n = self.calc_utility(T_n)
         # print("T_n", T_n)
@@ -167,7 +171,7 @@ class SystemManager():
 
         utility_factor = 0
         for n in range(self.num_services):
-            utility_factor += self.service_arrival[timeslot][n] / T_n[n]
+            utility_factor += self.service_arrival[timeslot][n] / self.service_set.partitions[cur_p_id].get_completion_time(self.net_manager)
 
         energy_factor = []
         for d in self.edge.values():
@@ -176,7 +180,7 @@ class SystemManager():
             energy_factor.append(E_d_hat / E_d)
         energy_factor = np.mean(energy_factor)
 
-        reward = utility_factor + energy_factor
+        reward = utility_factor #+ energy_factor
         # print("energy_factor", energy_factor)
         # print("utility_factor", utility_factor)
         return reward

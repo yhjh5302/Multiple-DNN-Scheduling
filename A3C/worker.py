@@ -39,18 +39,16 @@ class Worker(mp.Process):
         state = torch.FloatTensor(state).to(self.device)
 
         logits = self.local_policy_network.forward(state)
-        mask = self.env.get_mask(p_id=step)
-        prob = F.softmax(logits + to_tensor(mask), dim=-1)
-        print(prob)
-        dist = Categorical(prob)
-        action = dist.sample()
+        mask = self.env.get_mask(step=step)
+        dist = F.softmax(logits + to_tensor(mask), dim=-1)
+        probs = Categorical(dist)
 
-        return action.cpu().detach().item(), mask
+        return probs.sample().cpu().detach().item(), mask
     
     def compute_loss(self, trajectory):
         states = torch.FloatTensor([sars[0] for sars in trajectory]).to(self.device)
-        actions = np.array([sars[1] for sars in trajectory])
-        masks = np.array([sars[2] for sars in trajectory])
+        actions = torch.LongTensor([sars[1] for sars in trajectory]).to(self.device)
+        masks = torch.FloatTensor([sars[2] for sars in trajectory]).to(self.device)
         rewards = torch.FloatTensor([sars[3] for sars in trajectory]).to(self.device)
         next_states = torch.FloatTensor([sars[4] for sars in trajectory]).to(self.device)
         dones = torch.FloatTensor([sars[5] for sars in trajectory]).to(self.device)
@@ -65,18 +63,18 @@ class Worker(mp.Process):
 
         # compute policy loss with entropy bonus
         logits = self.local_policy_network.forward(states)
-        prob = F.softmax(logits + to_tensor(masks), dim=-1)
-        dist = Categorical(prob)
-        action = dist.sample()
-        logprob = dist.log_prob(action)
-        entropy = dist.entropy()
-
+        dists = F.softmax(logits + masks, dim=1)
+        probs = Categorical(dists)
+        
         # compute entropy bonus
-        entropy = torch.sum(entropy)
-
+        entropy = []
+        for dist in dists:
+            entropy.append(-torch.sum(dist.mean() * torch.log(dist + 1e-10)))
+        entropy = torch.stack(entropy).sum()
+      
         advantage = value_targets - values
-        policy_loss = -logprob * advantage.detach()
-        policy_loss = policy_loss.mean() - entropy * 0.001
+        policy_loss = -probs.log_prob(actions.view(actions.size(0))).view(-1, 1) * advantage.detach()
+        policy_loss = policy_loss.mean() - 0.001 * entropy
         
         return value_loss, policy_loss
 
