@@ -11,7 +11,7 @@ class DAGDataSet:
     def create_arrival_rate(self, num_services, minimum, maximum):
         return minimum + (maximum - minimum) * np.random.random(num_services)
 
-    def data_gen(self, num_services=1, max_partitions=20, deadline_opt=(10, 20), num_edges=5, num_fogs=1, num_clouds=1,
+    def data_gen(self, num_services=1, max_partitions=15, deadline_opt=(10, 20), num_edges=5, num_fogs=1, num_clouds=1,
                 ipc=(10**12), B_gw=1024*40, B_fog=1024*10, B_cl=1024*1, P_dd_opt=(0.5,1)):
         # ipc -> TFLOPS
         # create system manager
@@ -25,7 +25,7 @@ class DAGDataSet:
             svc = Service(deadline)
 
             # create partitions
-            dag_shape = (0, ((1, random.randint(2, max_partitions)), (0, random.randint(1, max_partitions)), (1, ((0, random.randint(1, max_partitions)), (0, random.randint(1, max_partitions)))), (0, 1)))
+            dag_shape = (0, ((1, random.randint(12, max_partitions)), (0, random.randint(11, max_partitions)), (1, ((0, random.randint(11, max_partitions)), (0, random.randint(11, max_partitions)))), (0, 1)))
             dag_size = svc.calc_service_size(shape=dag_shape) + 1
             svc.input_data_array = np.zeros(shape=(dag_size, dag_size), dtype=np.int32)
             svc.create_partitions(dag_shape)
@@ -62,16 +62,16 @@ class DAGDataSet:
                 mem = random.randint(2, 8) * 1024 * 1024 # KB
             elif device == 'large':
                 cpu = random.randint(1000, 2000) / 1000 # Tflops
-                mem = random.randint(4, 16) * 1024 * 1024 # KB
+                mem = random.randint(4, 8) * 1024 * 1024 # KB
             elif device == 'mobile':
                 cpu = random.randint(1000, 2000) / 1000 # Tflops
-                mem = random.randint(4, 16) * 1024 * 1024 # KB
+                mem = random.randint(4, 8) * 1024 * 1024 # KB
             else:
                 raise RuntimeError('Unknown device type {}'.format(device))
             edge[i] = Server(cpu, mem, ipc, system_manager=system_manager, id=i)
         for i in range(num_edges, num_edges + num_fogs):
             fog_cpu = random.randint(5, 5) # Tflops
-            fog_mem = random.randint(16, 16) * 1024 * 1024 # KB
+            fog_mem = random.randint(8, 8) * 1024 * 1024 # KB
             fog[i] = Server(fog_cpu, fog_mem, ipc, system_manager=system_manager, id=i)
         for i in range(num_edges + num_fogs, num_edges + num_fogs + num_clouds):
             cloud_cpu = random.randint(30, 30) # Tflops

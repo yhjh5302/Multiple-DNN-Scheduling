@@ -10,7 +10,7 @@ from util import *
 
 
 class Worker(mp.Process):
-    def __init__(self, id, env, gamma, global_value_network, global_policy_network, global_value_optimizer, global_policy_optimizer, global_episode, GLOBAL_MAX_EPISODE):
+    def __init__(self, id, env, layers, gamma, global_value_network, global_policy_network, global_value_optimizer, global_policy_optimizer, global_episode, GLOBAL_MAX_EPISODE):
         super(Worker, self).__init__()
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.name = "w%i" % id
@@ -22,8 +22,8 @@ class Worker(mp.Process):
         self.num_servers = self.env.data_set.num_servers
 
         self.gamma = gamma
-        self.local_policy_network = PolicyNetwork(self.obs_dim, self.num_servers).to(self.device)
-        self.local_value_network = ValueNetwork(self.obs_dim, 1).to(self.device)
+        self.local_policy_network = PolicyNetwork(layers=layers, input_dim=self.obs_dim, output_dim=self.num_servers).to(self.device)
+        self.local_value_network = ValueNetwork(layers=layers, input_dim=self.obs_dim, output_dim=1).to(self.device)
 
         self.global_policy_network = global_policy_network.to(self.device)
         self.global_policy_optimizer = global_policy_optimizer
@@ -69,11 +69,12 @@ class Worker(mp.Process):
         # compute entropy bonus
         entropy = []
         for dist in dists:
-            entropy.append(-torch.sum(dist.mean() * torch.log(dist + 1e-10)))
+            entropy.append(-torch.sum(dist.mean() * torch.log(dist + 1e-20)))
         entropy = torch.stack(entropy).sum()
       
         advantage = value_targets - values
         policy_loss = -probs.log_prob(actions.view(actions.size(0))).view(-1, 1) * advantage.detach()
+        print("entropy", entropy.item(), "policy_loss", policy_loss.mean().item())
         policy_loss = policy_loss.mean() - 0.001 * entropy
         
         return value_loss, policy_loss
@@ -104,6 +105,10 @@ class Worker(mp.Process):
         trajectory = [] # [[s, a, m, r, s', done], [], ...]
         episode_reward = 0
         step = 0
+
+        from copy import deepcopy
+        max_reward = 0
+        max_reward_action = None
         
         while self.global_episode.value < self.GLOBAL_MAX_EPISODE:
             action, mask = self.get_action(state, step)
@@ -115,8 +120,11 @@ class Worker(mp.Process):
             if done:
                 with self.global_episode.get_lock():
                     self.global_episode.value += 1
-                print(self.name + " | episode: "+ str(self.global_episode.value) + " " + str(episode_reward / step))
+                print(self.name + " | episode: "+ str(self.global_episode.value) + " reward: " + str(reward) + " average_reward: " + str(sum([self.env.data_set.system_manager.get_reward(cur_p_id=self.env.scheduling_lst[i],timeslot=0, step=i) for i in range(self.env.data_set.num_partitions)]) / self.env.data_set.num_partitions)) # episode_reward / step
                 print(self.env.data_set.system_manager.deployed_server)
+                if max_reward < reward:
+                    max_reward = reward
+                    max_reward_action = deepcopy(self.env.data_set.system_manager.deployed_server)
 
                 self.update_global(trajectory)
                 self.sync_with_global()
@@ -127,3 +135,13 @@ class Worker(mp.Process):
                 state = self.env.reset()
             else:
                 state = next_state
+        
+        self.env.data_set.system_manager.set_env(deployed_server=max_reward_action)
+        print("---------- A3C Algorithm ----------")
+        print("x: ", max_reward_action)
+        print("y: ", self.env.data_set.system_manager.execution_order)
+        print([s.constraint_chk() for s in self.env.data_set.system_manager.server.values()])
+        #print("t: ", self.env.data_set.system_manager.total_time())
+        print("reward: {:.3f}".format(self.env.data_set.system_manager.get_reward(cur_p_id=-1,timeslot=0)))
+        print("average_reward: {:.3f}".format(sum([self.env.data_set.system_manager.get_reward(cur_p_id=i,timeslot=0) for i in range(self.env.data_set.num_partitions)]) / self.env.data_set.num_partitions))
+        print("---------- A3C Algorithm ----------\n")

@@ -8,7 +8,7 @@ from A3C.worker import Worker
 
 
 class A3CAgent:
-    def __init__(self, env, gamma, lr, global_max_episode):
+    def __init__(self, env, layers, gamma, lr, global_max_episode):
         mp.set_start_method('spawn')
         self.env = env
 
@@ -21,15 +21,15 @@ class A3CAgent:
         self.action_dim = self.env.action_space.shape[0]
         self.num_servers = self.env.data_set.num_servers
 
-        self.global_value_network = ValueNetwork(self.obs_dim, 1)
+        self.global_value_network = ValueNetwork(layers=layers, input_dim=self.obs_dim, output_dim=1)
         self.global_value_network.share_memory()
         self.global_value_optimizer = optim.Adam(self.global_value_network.parameters(), lr=lr)
 
-        self.global_policy_network = PolicyNetwork(self.obs_dim, self.num_servers)
+        self.global_policy_network = PolicyNetwork(layers=layers, input_dim=self.obs_dim, output_dim=self.num_servers)
         self.global_policy_network.share_memory()
         self.global_policy_optimizer = optim.Adam(self.global_policy_network.parameters(), lr=lr)
         
-        self.workers = [Worker(i, env, self.gamma, self.global_value_network, self.global_policy_network, self.global_value_optimizer, self.global_policy_optimizer, self.global_episode, self.GLOBAL_MAX_EPISODE) for i in range(int(mp.cpu_count() / 4))]
+        self.workers = [Worker(i, env, layers, self.gamma, self.global_value_network, self.global_policy_network, self.global_value_optimizer, self.global_policy_optimizer, self.global_episode, self.GLOBAL_MAX_EPISODE) for i in range(4)]
     
     def train(self):
         print("Training on {} cores and {} workers".format(mp.cpu_count(), len(self.workers)))

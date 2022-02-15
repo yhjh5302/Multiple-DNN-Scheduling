@@ -4,36 +4,28 @@ import torch.nn.functional as F
 
 
 class ValueNetwork(nn.Module):
-    def __init__(self, input_dim, output_dim):
+    def __init__(self, layers, input_dim, output_dim):
         super(ValueNetwork, self).__init__()
-        self.fc1 = nn.Linear(input_dim, 1024)
-        self.fc2 = nn.Linear(1024, 1024)
-        self.fc3 = nn.Linear(1024, 1024)
-        self.fc4 = nn.Linear(1024, 1024)
-        self.fc5 = nn.Linear(1024, output_dim)
-
-    def forward(self, state):
-        value = F.relu(self.fc1(state))
-        value = F.relu(self.fc2(value))
-        value = F.relu(self.fc3(value))
-        value = F.relu(self.fc4(value))
-        value = self.fc5(value)
-        return value
+        modules = [nn.Linear(input_dim, layers[0])] + [nn.Linear(layers[i-1], layers[i]) for i in range(1, len(layers))] + [nn.Linear(layers[-1], output_dim)]
+        self.layers = nn.Sequential(*modules)
+    
+    def forward(self, x):
+        x = self.layers[0](x)
+        for i in range(1, len(self.layers)):
+            x = F.relu(x)
+            x = self.layers[i](x)
+        return x
 
 
 class PolicyNetwork(nn.Module):
-    def __init__(self, input_dim, output_dim):
+    def __init__(self, layers, input_dim, output_dim):
         super(PolicyNetwork, self).__init__()
-        self.fc1 = nn.Linear(input_dim, 1024)
-        self.fc2 = nn.Linear(1024, 1024)
-        self.fc3 = nn.Linear(1024, 1024)
-        self.fc4 = nn.Linear(1024, 1024)
-        self.fc5 = nn.Linear(1024, output_dim)
+        modules = [nn.Linear(input_dim, layers[0])] + [nn.Linear(layers[i-1], layers[i]) for i in range(1, len(layers))] + [nn.Linear(layers[-1], output_dim)]
+        self.layers = nn.Sequential(*modules)
     
-    def forward(self, state):
-        logits = F.relu(self.fc1(state))
-        logits = F.relu(self.fc2(logits))
-        logits = F.relu(self.fc3(logits))
-        logits = F.relu(self.fc4(logits))
-        logits = self.fc5(logits)
-        return logits
+    def forward(self, x):
+        x = self.layers[0](x)
+        for i in range(1, len(self.layers)):
+            x = F.relu(x)
+            x = self.layers[i](x)
+        return x

@@ -149,21 +149,28 @@ class SystemManager():
         temp = self.deployed_server[next_p_id]
 
         next_partition = self.service_set.partitions[next_p_id]
-        next_state = []
+        next_state = [next_p_id]
+
+        self.set_env(cur_p_id=next_p_id, s_id=self.cloud_id - 1)
+        edge_TF = next_partition.get_completion_time(self.net_manager)
+        edge_T_cp = next_partition.computation_amount / self.server[self.cloud_id - 1].cpu
+
         for s_id, s in self.server.items():
-            self.set_env(cur_p_id=next_p_id, s_id=s_id)
-            next_state += [
-                1 / next_partition.get_completion_time(self.net_manager), # server finish time
-                s.memory / (2**20), # server memory
-                sum(s.deployed_partition_mem.values()) / (2**20), # server memory requirement
-                s.energy / 100, # server energy
-                s.energy_consumption() / 100, # server energy consumption
-            ]
+            if s_id != self.cloud_id:
+                self.set_env(cur_p_id=next_p_id, s_id=s_id)
+                TF = next_partition.get_completion_time(self.net_manager)
+                T_cp = next_partition.computation_amount / s.cpu
+                next_state += [
+                    (TF - edge_TF) * 1000, # server finish time
+                    ((TF - T_cp) - (edge_TF - edge_T_cp)) * 1000, # task ready time
+                    (T_cp - edge_T_cp) * 1000, # task computation time
+                    (sum(self.partition_mem[np.where(self.deployed_server == s_id)]) - s.memory) / s.memory, # server memory
+                ]
 
         self.deployed_server[next_p_id] = temp
         return np.array(next_state)
 
-    def get_reward(self, cur_p_id, timeslot):
+    def get_reward(self, cur_p_id, timeslot, step=None):
         T_n = self.total_time()
         # U_n = self.calc_utility(T_n)
         # print("T_n", T_n)
@@ -183,7 +190,11 @@ class SystemManager():
         reward = utility_factor #+ energy_factor
         # print("energy_factor", energy_factor)
         # print("utility_factor", utility_factor)
-        return reward
+        if step == None:
+            step = self.num_partitions
+        else:
+            step = step + 1
+        return reward / 1000 * (step / self.num_partitions)
 
     def calc_utility(self, T_n):
         U_n = np.zeros(shape=(self.num_services, ))
@@ -292,8 +303,6 @@ class Partition:
 
     def get_computaion_time(self): # for state
         T_cp = self.computation_amount / self.deployed_server.cpu
-        if not self.deployed_server.constraint_chk():
-            T_cp = float("inf")
         return T_cp
 
 
