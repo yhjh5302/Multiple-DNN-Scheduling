@@ -120,7 +120,7 @@ class Worker(mp.Process):
             if done:
                 with self.global_episode.get_lock():
                     self.global_episode.value += 1
-                print(self.name + " | episode: "+ str(self.global_episode.value) + " reward: " + str(reward) + " average_reward: " + str(sum([self.env.data_set.system_manager.get_reward(cur_p_id=self.env.scheduling_lst[i],timeslot=0, step=i) for i in range(self.env.data_set.num_partitions)]) / self.env.data_set.num_partitions)) # episode_reward / step
+                print(self.name + " | episode: "+ str(self.global_episode.value) + " reward: " + str(reward)) # episode_reward / step
                 print(self.env.data_set.system_manager.deployed_server)
                 if max_reward < reward:
                     max_reward = reward

@@ -28,7 +28,7 @@ class DAGEnv (gym.Env):
 
     def step(self, action):
         self.data_set.system_manager.set_env(cur_p_id=self.scheduling_lst[self.cur_step], s_id=action)
-        reward = self.data_set.system_manager.get_reward(cur_p_id=self.scheduling_lst[self.cur_step], next_p_id=self.scheduling_lst[self.cur_step+1], timeslot=self.cur_timeslot, step=self.cur_step)
+        reward = self.data_set.system_manager.get_reward(cur_p_id=self.scheduling_lst[self.cur_step], timeslot=self.cur_timeslot)
 
         self.cur_step += 1
         if self.cur_step < self.max_step:

@@ -75,14 +75,14 @@ if __name__ == "__main__":
     print("y: ", y)
     print([s.constraint_chk() for s in env.data_set.system_manager.server.values()])
     #print("t: ", env.data_set.system_manager.total_time())
-    print("reward: {:.3f}".format(env.data_set.system_manager.get_reward(cur_p_id=-1, next_p_id=0, timeslot=0)))
-    print("average_reward: {:.3f}".format(sum([env.data_set.system_manager.get_reward(cur_p_id=env.scheduling_lst[i], next_p_id=env.scheduling_lst[i], timeslot=0, step=i) for i in range(env.data_set.num_partitions)]) / env.data_set.num_partitions))
-    print([env.data_set.system_manager.get_reward(cur_p_id=env.scheduling_lst[i], next_p_id=env.scheduling_lst[i] ,timeslot=0, step=i) for i in range(env.data_set.num_partitions)])
+    print("reward: {:.3f}".format(env.data_set.system_manager.get_reward(cur_p_id=-1, timeslot=0)))
+    #print("average_reward: {:.3f}".format(sum([env.data_set.system_manager.get_reward(cur_p_id=env.scheduling_lst[i], timeslot=0) for i in range(env.data_set.num_partitions)]) / env.data_set.num_partitions))
+    print([env.data_set.system_manager.get_reward(cur_p_id=env.scheduling_lst[i], timeslot=0) for i in range(env.data_set.num_partitions)])
     #print("took: {:.3f} sec".format(time.time() - start))
     print("---------- Greedy Algorithm ----------\n")
 
     layers = [1024, 1024, 1024, 1024, 512, 512, 512, 512, 512, 512]
-    gamma = 0.9
+    gamma = 0.99
     lr = 1e-6
     GLOBAL_MAX_EPISODE = 50000
     a3c_main(env, layers, gamma, lr, GLOBAL_MAX_EPISODE)

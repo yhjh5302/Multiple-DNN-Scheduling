@@ -167,17 +167,15 @@ class SystemManager():
         self.deployed_server[next_p_id] = temp
         return np.array(next_state)
 
-    def get_reward(self, cur_p_id, timeslot, step=None):
+    def get_reward(self, cur_p_id, timeslot):
         T_n = self.total_time()
         # U_n = self.calc_utility(T_n)
         # print("T_n", T_n)
         # print("U_n", U_n)
 
-        
-
         utility_factor = 0
         for n in range(self.num_services):
-                utility_factor += self.service_set.partitions[cur_p_id].get_completion_time(self.net_manager)
+            utility_factor += self.service_set.partitions[cur_p_id].get_completion_time(self.net_manager)
 
         energy_factor = []
         for d in self.edge.values():
@@ -186,14 +184,14 @@ class SystemManager():
             energy_factor.append(E_d_hat / E_d)
         energy_factor = np.mean(energy_factor)
 
-        reward = utility_factor #+ energy_factor
-        # print("energy_factor", energy_factor)
-        # print("utility_factor", utility_factor)
-        if step == None:
-            step = self.num_partitions
+        reward = utility_factor + energy_factor / 100
+        #print("energy_factor", energy_factor)
+        #print("utility_factor", utility_factor)
+
+        if cur_p_id == -1 or cur_p_id == self.num_partitions - 1:
+            return reward
         else:
-            step = step + 1
-        return reward / 500 * (step / self.num_partitions)
+            return 0
 
     def calc_utility(self, T_n):
         U_n = np.zeros(shape=(self.num_services, ))
