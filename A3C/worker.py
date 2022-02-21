@@ -142,6 +142,6 @@ class Worker(mp.Process):
         print("y: ", self.env.data_set.system_manager.execution_order)
         print([s.constraint_chk() for s in self.env.data_set.system_manager.server.values()])
         #print("t: ", self.env.data_set.system_manager.total_time())
-        print("reward: {:.3f}".format(self.env.data_set.system_manager.get_reward(cur_p_id=-1,timeslot=0)))
-        print("average_reward: {:.3f}".format(sum([self.env.data_set.system_manager.get_reward(cur_p_id=i,timeslot=0) for i in range(self.env.data_set.num_partitions)]) / self.env.data_set.num_partitions))
+        print("reward: {:.3f}".format(self.env.data_set.system_manager.get_reward(cur_p_id=-1, next_p_id=0, timeslot=0)))
+        print("average_reward: {:.3f}".format(sum([self.env.data_set.system_manager.get_reward(cur_p_id=self.env.scheduling_lst[i], next_p_id=self.env.scheduling_lst[i], timeslot=0, step=i) for i in range(self.env.data_set.num_partitions)]) / self.env.data_set.num_partitions))
         print("---------- A3C Algorithm ----------\n")

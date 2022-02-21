@@ -152,8 +152,6 @@ class SystemManager():
         next_state = [next_p_id]
 
         self.set_env(cur_p_id=next_p_id, s_id=self.cloud_id - 1)
-        edge_TF = next_partition.get_completion_time(self.net_manager)
-        edge_T_cp = next_partition.computation_amount / self.server[self.cloud_id - 1].cpu
 
         for s_id, s in self.server.items():
             if s_id != self.cloud_id:
@@ -161,10 +159,9 @@ class SystemManager():
                 TF = next_partition.get_completion_time(self.net_manager)
                 T_cp = next_partition.computation_amount / s.cpu
                 next_state += [
-                    (TF - edge_TF) * 1000, # server finish time
-                    ((TF - T_cp) - (edge_TF - edge_T_cp)) * 1000, # task ready time
-                    (T_cp - edge_T_cp) * 1000, # task computation time
-                    (sum(self.partition_mem[np.where(self.deployed_server == s_id)]) - s.memory) / s.memory, # server memory
+                    next_partition.get_ready_time(self.net_manager) * 1000, # task ready time
+                    next_partition.get_computation_time() * 1000, # task computation time
+                    sum(self.partition_mem[np.where(self.deployed_server == s_id)]) < s.memory, # server memory
                 ]
 
         self.deployed_server[next_p_id] = temp
@@ -176,9 +173,11 @@ class SystemManager():
         # print("T_n", T_n)
         # print("U_n", U_n)
 
+        
+
         utility_factor = 0
         for n in range(self.num_services):
-            utility_factor += self.service_arrival[timeslot][n] / self.service_set.partitions[cur_p_id].get_completion_time(self.net_manager)
+                utility_factor += self.service_set.partitions[cur_p_id].get_completion_time(self.net_manager)
 
         energy_factor = []
         for d in self.edge.values():
@@ -194,7 +193,7 @@ class SystemManager():
             step = self.num_partitions
         else:
             step = step + 1
-        return reward / 1000 * (step / self.num_partitions)
+        return reward / 500 * (step / self.num_partitions)
 
     def calc_utility(self, T_n):
         U_n = np.zeros(shape=(self.num_services, ))
@@ -272,6 +271,10 @@ class Partition:
     def get_completion_time(self, net_manager):
         self.service.finish_time = np.zeros(len(self.service.partitions))
         return self.get_task_finish_time(net_manager)
+    
+    def get_ready_time(self, net_manager):
+        self.service.finish_time = np.zeros(len(self.service.partitions))
+        return self.get_task_finish_time(net_manager) - self.get_computation_time()
 
     def get_task_ready_time(self, net_manager):
         if len(self.predecessors) == 0:
@@ -298,10 +301,10 @@ class Partition:
                     finish_time = c.get_task_finish_time(net_manager)
                     self.service.finish_time[c.id] = finish_time
                 TR_n.append(finish_time)
-        T_cp = self.get_computaion_time()
+        T_cp = self.get_computation_time()
         return max(TR_n) + T_cp
 
-    def get_computaion_time(self): # for state
+    def get_computation_time(self): # for state
         T_cp = self.computation_amount / self.deployed_server.cpu
         return T_cp
 
