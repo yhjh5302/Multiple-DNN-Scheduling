@@ -25,7 +25,7 @@ class DAGDataSet:
             svc = Service(deadline)
 
             # create partitions
-            dag_shape = (0, ((1, random.randint(12, max_partitions)), (0, random.randint(11, max_partitions)), (1, ((0, random.randint(11, max_partitions)), (0, random.randint(11, max_partitions)))), (0, 1)))
+            dag_shape = (0, ((1, random.randint(max_partitions, max_partitions)), (0, random.randint(max_partitions, max_partitions)), (1, ((0, random.randint(max_partitions, max_partitions)), (0, random.randint(max_partitions, max_partitions)))), (0, 1)))
             dag_size = svc.calc_service_size(shape=dag_shape) + 1
             svc.input_data_array = np.zeros(shape=(dag_size, dag_size), dtype=np.int32)
             svc.create_partitions(dag_shape)

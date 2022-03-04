@@ -1,6 +1,8 @@
 from collections import deque
+from os import times
 import random
 import math
+from time import time
 import numpy as np
 
 
@@ -77,6 +79,7 @@ class SystemManager():
         self.num_services = None
         self.num_partitions = None
         self.cloud_id = None
+        self.timeslot = 0
         self.ranku = None
 
     def constraint_chk(self, deployed_server, s_id=None):
@@ -110,7 +113,7 @@ class SystemManager():
         return result
 
     def get_completion_time(self, partition_id):
-        return self.service_set.partitions[partition_id].get_completion_time(self.net_manager)
+        return self.service_set.partitions[partition_id].service.get_completion_time(self.net_manager, partition_id)
 
     def set_servers(self, edge, fog, cloud):
         self.edge = edge
@@ -129,10 +132,7 @@ class SystemManager():
         deployed_server = np.full(shape=self.num_partitions, fill_value=self.cloud_id)
         self.set_env(deployed_server=deployed_server, execution_order=execution_order)
 
-    def set_env(self, deployed_server=None, execution_order=None, cur_p_id=None, s_id=None):
-        if cur_p_id != None and s_id != None:
-            self.deployed_server[cur_p_id] = s_id
-            deployed_server = self.deployed_server
+    def set_env(self, deployed_server=None, execution_order=None):
         if deployed_server is not None:
             [s.reset() for s in self.server.values()]
             self.deployed_server = np.array(deployed_server, dtype=np.int32)
@@ -145,29 +145,21 @@ class SystemManager():
             for order, p_id in enumerate(self.execution_order):
                 self.service_set.partitions[p_id].update(execution_order=order)
 
-    def get_state(self, next_p_id):
-        temp = self.deployed_server[next_p_id]
+    # def get_state(self):
+    #     for s_id, s in self.server.items():
+    #         if s_id != self.cloud_id:
+    #             self.set_env(cur_p_id=next_p_id, s_id=s_id)
+    #             TF = next_partition.get_completion_time(self.net_manager)
+    #             T_cp = next_partition.computation_amount / s.cpu
+    #             next_state += [
+    #                 next_partition.get_computation_time() * 1000, # task computation time
+    #                 sum(self.partition_mem[np.where(self.deployed_server == s_id)]) < s.memory, # server memory
+    #             ]
 
-        next_partition = self.service_set.partitions[next_p_id]
-        next_state = [next_p_id]
+    #     self.deployed_server[next_p_id] = temp
+    #     return np.array(next_state)
 
-        self.set_env(cur_p_id=next_p_id, s_id=self.cloud_id - 1)
-
-        for s_id, s in self.server.items():
-            if s_id != self.cloud_id:
-                self.set_env(cur_p_id=next_p_id, s_id=s_id)
-                TF = next_partition.get_completion_time(self.net_manager)
-                T_cp = next_partition.computation_amount / s.cpu
-                next_state += [
-                    next_partition.get_ready_time(self.net_manager) * 1000, # task ready time
-                    next_partition.get_computation_time() * 1000, # task computation time
-                    sum(self.partition_mem[np.where(self.deployed_server == s_id)]) < s.memory, # server memory
-                ]
-
-        self.deployed_server[next_p_id] = temp
-        return np.array(next_state)
-
-    def get_reward(self, cur_p_id, timeslot):
+    def get_reward(self):
         T_n = self.total_time()
         # U_n = self.calc_utility(T_n)
         # print("T_n", T_n)
@@ -175,7 +167,7 @@ class SystemManager():
 
         utility_factor = 0
         for n in range(self.num_services):
-            utility_factor += self.service_set.partitions[cur_p_id].get_completion_time(self.net_manager)
+            utility_factor += 1 / self.service_set.services[n].get_completion_time(self.net_manager)
 
         energy_factor = []
         for d in self.edge.values():
@@ -184,14 +176,10 @@ class SystemManager():
             energy_factor.append(E_d_hat / E_d)
         energy_factor = np.mean(energy_factor)
 
-        reward = utility_factor + energy_factor / 100
+        reward = utility_factor #+ energy_factor / 100
         #print("energy_factor", energy_factor)
         #print("utility_factor", utility_factor)
-
-        if cur_p_id == -1 or cur_p_id == self.num_partitions - 1:
-            return reward
-        else:
-            return 0
+        return reward
 
     def calc_utility(self, T_n):
         U_n = np.zeros(shape=(self.num_services, ))
@@ -265,14 +253,6 @@ class Partition:
 
     def set_predecessor_partition(self, partition):
         self.predecessors[partition.id] = partition
-    
-    def get_completion_time(self, net_manager):
-        self.service.finish_time = np.zeros(len(self.service.partitions))
-        return self.get_task_finish_time(net_manager)
-    
-    def get_ready_time(self, net_manager):
-        self.service.finish_time = np.zeros(len(self.service.partitions))
-        return self.get_task_finish_time(net_manager) - self.get_computation_time()
 
     def get_task_ready_time(self, net_manager):
         if len(self.predecessors) == 0:
@@ -290,17 +270,22 @@ class Partition:
         return TR_n
 
     def get_task_finish_time(self, net_manager):
-        TR_n = [self.get_task_ready_time(net_manager)]
+        if self.service.ready_time[self.id]: # for redundant calc
+            TR_n = [self.service.ready_time[self.id]]
+        else:
+            TR_n = [self.get_task_ready_time(net_manager)]
         for c in self.service.partitions:
             if c.deployed_server == self.deployed_server and c.execution_order < self.execution_order:
-                if self.service.finish_time[c.id]:
+                if self.service.finish_time[c.id]: # for redundant calc
                     finish_time = self.service.finish_time[c.id]
-                else:
+                    TR_n.append(finish_time)
+                elif self.service.ready_time[c.id]:
                     finish_time = c.get_task_finish_time(net_manager)
                     self.service.finish_time[c.id] = finish_time
-                TR_n.append(finish_time)
+                    TR_n.append(finish_time)
         T_cp = self.get_computation_time()
-        return max(TR_n) + T_cp
+        self.service.finish_time[self.id] = max(TR_n) + T_cp
+        return self.service.finish_time[self.id]
 
     def get_computation_time(self): # for state
         T_cp = self.computation_amount / self.deployed_server.cpu
@@ -314,6 +299,8 @@ class Service:
         self.partitions = list()
         self.deadline = deadline
         self.input_data_array = None
+        self.ready_time = None
+        self.finish_time = None
 
     def calc_service_size(self, shape):
         if type(shape[1]) == int:
@@ -325,8 +312,24 @@ class Service:
             return size
 
     #  calculate the total completion time of the dag
-    def get_completion_time(self, net_manager):
-        return self.partitions[-1].get_completion_time(net_manager)
+    def get_completion_time(self, net_manager, partition_id=None):
+        # initialize
+        self.ready_time = np.zeros(shape=len(self.partitions))
+        self.finish_time = np.zeros(shape=len(self.partitions))
+        for c in self.partitions:
+            if len(c.predecessors) == 0:
+                self.ready_time[c.id] = c.get_task_ready_time(net_manager)
+        
+        while 0 in self.finish_time:
+            for c in self.partitions:
+                if self.ready_time[c.id]:
+                    if partition_id != None and partition_id == c.id:
+                        return c.get_task_finish_time(net_manager)
+                    self.finish_time[c.id] = c.get_task_finish_time(net_manager)
+                    for succ in c.successors:
+                        if 0 not in [self.finish_time[pred.id] for pred in succ.predecessors]:
+                            self.ready_time[succ.id] = succ.get_task_ready_time(net_manager)
+        return max(self.finish_time)
 
     # for the datagenerator, create dag reculsively
     def create_partitions(self, opt=(1, ((0, 3), (0, 4)))):
@@ -499,23 +502,26 @@ class Server:
 
     def energy_consumption(self):
         if self.id in self.system_manager.edge:
-            return self.computation_energy_consumption() + self.transmission_energy_consumption()
+            E_d = self.computation_energy_consumption() + self.transmission_energy_consumption()
+            return E_d #* self.system_manager.partition_arrival[c.id]
         else:
             return 0
 
     def computation_energy_consumption(self):
-        E_cp_d = self.min_energy + (self.max_energy - self.min_energy)
+        E_cp_d = self.min_energy
+        for c in self.deployed_partition.values():
+            T_cp = c.get_computation_time()
+            E_cp_d += (self.max_energy - self.min_energy) * T_cp
         return E_cp_d
 
     def transmission_energy_consumption(self):
         E_tr_d = 0.
-        for c in self.system_manager.service_set.partitions:
+        for c in self.deployed_partition.values():
             E_tr_dnm = 0.
-            if self.system_manager.deployed_server[c.id] in self.system_manager.edge:
-                for succ in c.successors:
-                    T_tr = self.system_manager.net_manager.communication(c.get_output_data_size(succ), self.system_manager.deployed_server[c.id], self.system_manager.deployed_server[succ.id])
-                    E_tr_dnm += self.system_manager.net_manager.P_dd[self.system_manager.deployed_server[c.id], self.system_manager.deployed_server[succ.id]] * T_tr
-            E_tr_d += E_tr_dnm * self.system_manager.partition_arrival[c.id]
+            for succ in c.successors:
+                T_tr = self.system_manager.net_manager.communication(c.get_output_data_size(succ), self.system_manager.deployed_server[c.id], self.system_manager.deployed_server[succ.id])
+                E_tr_dnm += self.system_manager.net_manager.P_dd[self.system_manager.deployed_server[c.id], self.system_manager.deployed_server[succ.id]] * T_tr
+            E_tr_d += E_tr_dnm
         return E_tr_d
 
 
