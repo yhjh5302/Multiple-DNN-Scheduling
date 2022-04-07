@@ -11,13 +11,13 @@ MEM_RATIO = 1024 # memory usage per input data (1 KB)
 
 
 class NetworkManager:  # managing data transfer
-    def __init__(self, channel_bandwidth, channel_gain, gaussian_noise, system_manager):
+    def __init__(self, channel_bandwidth, channel_gain, gaussian_noise, B_edge, B_cloud, system_manager):
         self.C = channel_bandwidth
         self.g_wd = channel_gain
         self.sigma_w = gaussian_noise
-        self.B_gw = None
-        self.B_fog = None
-        self.B_cl = None
+        self.B_gw = B_edge
+        self.B_edge = B_edge
+        self.B_cloud = B_cloud
         self.B_dd = None
         self.P_dd = None
         self.system_manager = system_manager
@@ -25,12 +25,12 @@ class NetworkManager:  # managing data transfer
     def communication(self, amount, sender, receiver):
         if sender == receiver:
             return 0
-        elif sender in self.system_manager.edge and receiver in self.system_manager.edge:
+        elif sender in self.system_manager.local and receiver in self.system_manager.local:
             return amount / self.B_dd[sender, receiver]
         elif sender in self.system_manager.cloud or receiver in self.system_manager.cloud:
-            return amount / self.B_cl
-        elif sender in self.system_manager.fog or receiver in self.system_manager.fog:
-            return amount / self.B_fog
+            return amount / self.B_cloud
+        elif sender in self.system_manager.edge or receiver in self.system_manager.edge:
+            return amount / self.B_edge
 
     def cal_b_dd(self):
         self.B_dd = np.zeros_like(self.P_dd)
@@ -56,18 +56,12 @@ class SystemManager():
         self.deployed_server = None
         self.execution_order = None
         self.cloud = None
-        self.fog = None
         self.edge = None
+        self.local = None
         self.server = None
 
         # service and partition info
         self.service_set = None
-
-        # for constraint check
-        self.server_cpu = None
-        self.server_mem = None
-        self.partition_cpu = None
-        self.partition_mem = None
         
         # for network bandwidth and arrival rate
         self.net_manager = None
@@ -80,11 +74,12 @@ class SystemManager():
         self.num_partitions = None
         self.cloud_id = None
         self.timeslot = 0
-        self.ranku = None
+        self.rank_u = None
+        self.rank_oct = None
 
-    def constraint_chk(self, deployed_server, s_id=None):
-        self.set_env(deployed_server=deployed_server)
-        if s_id:
+    def constraint_chk(self, deployed_server, execution_order, s_id=None):
+        self.set_env(deployed_server=deployed_server, execution_order=execution_order)
+        if s_id != None:
             return self.server[s_id].constraint_chk()
         else:
             return [s.constraint_chk() for s in self.server.values()]
@@ -97,11 +92,15 @@ class SystemManager():
         for svc in service_set.services:
             for partition in svc.partitions:
                 self.partition_arrival[partition.id] = self.service_arrival[0][svc.id]
-        self.partition_mem = np.zeros(len(self.service_set.partitions), dtype=np.int32)
-        for partition in self.service_set.partitions:
-            self.partition_mem[partition.id] = partition.memory
 
-    def change_arrival(self, timeslot):
+    def after_timeslot(self, deployed_server, execution_order, timeslot):
+        self.set_env(deployed_server=deployed_server, execution_order=execution_order)
+
+        # energy update
+        for server in self.server.values():
+            server.energy_update()
+
+        # arrival rate update
         for svc in self.service_set.services:
             for partition in svc.partitions:
                 self.partition_arrival[partition.id] = self.service_arrival[timeslot][svc.id]
@@ -112,69 +111,52 @@ class SystemManager():
             result[svc.id] = svc.get_completion_time(self.net_manager)
         return result
 
-    def get_completion_time(self, partition_id):
-        return self.service_set.partitions[partition_id].service.get_completion_time(self.net_manager, partition_id)
+    def get_completion_time(self, partition_id, Tr=None, Tf=None):
+        return self.service_set.partitions[partition_id].service.get_completion_time_partition(self.net_manager, partition_id, Tr, Tf)
 
-    def set_servers(self, edge, fog, cloud):
+    def set_servers(self, local, edge, cloud):
+        self.local = local
         self.edge = edge
-        self.fog = fog
         self.cloud = cloud
         self.cloud_id = random.choice(list(cloud.keys()))
-        self.server = {**edge, **fog, **cloud}
+        self.server = {**local, **edge, **cloud}
 
-        self.server_cpu = np.zeros(self.num_servers)
-        self.server_mem = np.zeros(self.num_servers)
-        for id, s in self.server.items():
-            self.server_cpu[id] = s.cpu
-            self.server_mem[id] = s.memory
-
-    def init_env(self, execution_order):
+    def init_env(self):
+        for server in self.server.values():
+            server.reset()
         deployed_server = np.full(shape=self.num_partitions, fill_value=self.cloud_id)
+        execution_order = np.arange(self.num_partitions)
         self.set_env(deployed_server=deployed_server, execution_order=execution_order)
 
-    def set_env(self, deployed_server=None, execution_order=None):
-        if deployed_server is not None:
-            [s.reset() for s in self.server.values()]
-            self.deployed_server = np.array(deployed_server, dtype=np.int32)
-            for partition in self.service_set.partitions:
-                s_id = self.deployed_server[partition.id]
-                partition.update(deployed_server=self.server[s_id])
-                self.server[s_id].deploy_one(partition)
-        if execution_order is not None:
-            self.execution_order = np.array(execution_order, dtype=np.int32)
-            for order, p_id in enumerate(self.execution_order):
-                self.service_set.partitions[p_id].update(execution_order=order)
+    def set_env(self, deployed_server, execution_order):
+        [s.free() for s in self.server.values()]
+        self.deployed_server = np.array(deployed_server, dtype=np.int32)
+        for partition in self.service_set.partitions:
+            s_id = self.deployed_server[partition.id]
+            partition.update(deployed_server=self.server[s_id])
+            self.server[s_id].deploy_one(partition)
+        self.execution_order = np.array(execution_order, dtype=np.int32)
+        for order, p_id in enumerate(self.execution_order):
+            self.service_set.partitions[p_id].update(execution_order=order)
 
-    # def get_state(self):
-    #     for s_id, s in self.server.items():
-    #         if s_id != self.cloud_id:
-    #             self.set_env(cur_p_id=next_p_id, s_id=s_id)
-    #             TF = next_partition.get_completion_time(self.net_manager)
-    #             T_cp = next_partition.computation_amount / s.cpu
-    #             next_state += [
-    #                 next_partition.get_computation_time() * 1000, # task computation time
-    #                 sum(self.partition_mem[np.where(self.deployed_server == s_id)]) < s.memory, # server memory
-    #             ]
+    def get_state(self):
+        next_state = []
 
-    #     self.deployed_server[next_p_id] = temp
-    #     return np.array(next_state)
+        return np.array(next_state)
 
     def get_reward(self):
         T_n = self.total_time()
-        # U_n = self.calc_utility(T_n)
-        # print("T_n", T_n)
-        # print("U_n", U_n)
+        #U_n = self.calc_utility(T_n)
+        #print("T_n", T_n)
+        #print("U_n", U_n)
 
-        utility_factor = 0
-        for n in range(self.num_services):
-            utility_factor += 1 / self.service_set.services[n].get_completion_time(self.net_manager)
+        utility_factor = 1/sum(T_n)
 
         energy_factor = []
-        for d in self.edge.values():
+        for d in self.local.values():
             E_d = d.energy_consumption()
-            E_d_hat = d.energy
-            energy_factor.append(E_d_hat / E_d)
-        energy_factor = np.mean(energy_factor)
+            energy_factor.append(E_d)
+        energy_factor = 1 / np.sum(energy_factor)
 
         reward = utility_factor #+ energy_factor / 100
         #print("energy_factor", energy_factor)
@@ -185,7 +167,7 @@ class SystemManager():
         U_n = np.zeros(shape=(self.num_services, ))
         for n, svc in enumerate(self.service_set.services):
             T_n_hat = svc.deadline
-            alpha = 2
+            alpha = 5
             if T_n[n] < T_n_hat:
                 U_n[n] = 1
             elif T_n_hat <= T_n[n] and T_n[n] < alpha * T_n_hat:
@@ -196,18 +178,21 @@ class SystemManager():
 
     def calc_average(self):
         bandwidth = self.net_manager.B_dd
-        self.average_bandwidth = np.mean(bandwidth[bandwidth > 0])
-        self.average_computing_power = np.mean(self.server_cpu[:-1])
+        self.average_bandwidth = np.mean(bandwidth[bandwidth != np.inf])
+        self.average_computing_power = np.mean([s.computing_frequency / s.computing_intensity for s in self.server.values()])
 
-    def calc_ranku(self, partition):
-        w_i = partition.computation_amount / self.average_computing_power
+    def calc_rank_u(self, partition):    # rank_u for heft
+        w_i = partition.workload_size / self.average_computing_power
         communication_cost = [0,]
         for succ in partition.successors:
             c_ij = partition.get_output_data_size(succ) / self.average_bandwidth
-            if self.ranku[succ.id] == 0:
-                self.calc_ranku(succ)
-            communication_cost.append(c_ij + self.ranku[succ.id])
-        self.ranku[partition.id] = w_i + max(communication_cost)
+            if self.rank_u[succ.id] == 0:
+                self.calc_rank_u(succ)
+            communication_cost.append(c_ij + self.rank_u[succ.id])
+        self.rank_u[partition.id] = w_i + max(communication_cost)
+
+    def calc_rank_oct(self, partition):
+        pass
 
 
 TYPE_CHAIN = 0
@@ -216,21 +201,42 @@ TYPE_PARALLEL = 1
 
 class Partition:
     # the partition of the service in simulation
-    def __init__(self, service, computation_amount, memory):
+    def __init__(self, service, **kwargs):
         self.id = None
+        self.service = service
         self.deployed_server = None
         self.execution_order = None
-        self.service = service
-        self.computation_amount = computation_amount
-        self.memory = memory
-        self.successors = list()
-        self.predecessors = list()
+
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+        self.total_predecessors = set()
+        self.total_successors = set()
+        self.total_pred_succ_id = None
+    
+    def find_total_predecessors(self):
+        if len(self.successors) == 0:
+            return
+        for succ in self.successors:
+            succ.total_predecessors.add(self)
+            for pred in self.total_predecessors:
+                succ.total_predecessors.add(pred)
+            succ.find_total_predecessors()
+    
+    def find_total_successors(self):
+        if len(self.predecessors) == 0:
+            return
+        for pred in self.predecessors:
+            pred.total_successors.add(self)
+            for succ in self.total_successors:
+                pred.total_successors.add(succ)
+            pred.find_total_successors()
 
     def get_input_data_size(self, pred):
-        return self.service.input_data_array[pred.id, self.id]
+        return self.service.input_data_size[(pred, self)]
 
     def get_output_data_size(self, succ):
-        return self.service.input_data_array[self.id, succ.id]
+        return self.service.output_data_size[(self, succ)]
 
     def get_deployed_server(self):
         return self.deployed_server
@@ -240,7 +246,7 @@ class Partition:
 
     def reset(self):
         self.deployed_server = None
-        #self.execution_order = None
+        self.execution_order = None
 
     def update(self, deployed_server=None, execution_order=None):
         if deployed_server != None:
@@ -270,16 +276,16 @@ class Partition:
         return TR_n
 
     def get_task_finish_time(self, net_manager):
-        if self.service.ready_time[self.id]: # for redundant calc
-            TR_n = [self.service.ready_time[self.id]]
-        else:
-            TR_n = [self.get_task_ready_time(net_manager)]
+        if self.service.ready_time[self.id] == 0: # for redundant calc
+            self.service.ready_time[self.id] = self.get_task_ready_time(net_manager)
+        TR_n = [self.service.ready_time[self.id]]
+
         for c in self.service.partitions:
             if c.deployed_server == self.deployed_server and c.execution_order < self.execution_order:
-                if self.service.finish_time[c.id]: # for redundant calc
+                if self.service.finish_time[c.id] > 0: # for redundant calc
                     finish_time = self.service.finish_time[c.id]
                     TR_n.append(finish_time)
-                elif self.service.ready_time[c.id]:
+                elif self.service.ready_time[c.id] > 0:
                     finish_time = c.get_task_finish_time(net_manager)
                     self.service.finish_time[c.id] = finish_time
                     TR_n.append(finish_time)
@@ -288,7 +294,7 @@ class Partition:
         return self.service.finish_time[self.id]
 
     def get_computation_time(self): # for state
-        T_cp = self.computation_amount / self.deployed_server.cpu
+        T_cp = self.workload_size * self.deployed_server.computing_intensity / self.deployed_server.computing_frequency
         return T_cp
 
 
@@ -298,21 +304,13 @@ class Service:
         self.id = None
         self.partitions = list()
         self.deadline = deadline
-        self.input_data_array = None
+        self.input_data_size = dict()
+        self.output_data_size = dict()
         self.ready_time = None
         self.finish_time = None
 
-    def calc_service_size(self, shape):
-        if type(shape[1]) == int:
-            return shape[1]
-        elif type(shape[1]) in (tuple, list):
-            size = 0
-            for s in shape[1]:
-                size += self.calc_service_size(shape=s)
-            return size
-
     #  calculate the total completion time of the dag
-    def get_completion_time(self, net_manager, partition_id=None):
+    def get_completion_time(self, net_manager):
         # initialize
         self.ready_time = np.zeros(shape=len(self.partitions))
         self.finish_time = np.zeros(shape=len(self.partitions))
@@ -323,107 +321,25 @@ class Service:
         while 0 in self.finish_time:
             for c in self.partitions:
                 if self.ready_time[c.id]:
-                    if partition_id != None and partition_id == c.id:
-                        return c.get_task_finish_time(net_manager)
                     self.finish_time[c.id] = c.get_task_finish_time(net_manager)
                     for succ in c.successors:
                         if 0 not in [self.finish_time[pred.id] for pred in succ.predecessors]:
                             self.ready_time[succ.id] = succ.get_task_ready_time(net_manager)
         return max(self.finish_time)
 
-    # for the datagenerator, create dag reculsively
-    def create_partitions(self, opt=(1, ((0, 3), (0, 4)))):
-        #print("partition", opt)
-        input_data_size = random.randint(64, 512) # 64KB~1MB
-        computation_amount = input_data_size * COMP_RATIO
-        memory = input_data_size * MEM_RATIO
-        first_partition = Partition(self, computation_amount, memory)
-        first_partition.id = len(self.partitions)
-        self.input_data_array[first_partition.id, first_partition.id] = input_data_size
-        self.partitions.append(first_partition)
-
-        if opt[0] == TYPE_CHAIN:
-            self.create_chain_partition(first_partition, opt[1])
-        elif opt[0] == TYPE_PARALLEL:
-            self.create_parallel_partition(first_partition, opt[1])
+    #  calculate the total completion time of the dag
+    def get_completion_time_partition(self, net_manager, partition_id, ready_time=None, finish_time=None):
+        # initialize
+        if ready_time is None:
+            self.ready_time = np.zeros(shape=len(self.partitions))
         else:
-            raise RuntimeError('Unknown opt type!!')
-
-        self.update_successor(self.partitions[-1])
-
-
-    def create_chain_partition(self, predecessor, opt):
-        #print("chain opt", opt)
-        if type(opt) == int:
-            for _ in range(opt):
-                input_data_size = random.randint(64, 512) # 64KB~1MB
-                computation_amount = input_data_size * COMP_RATIO
-                memory = input_data_size * MEM_RATIO
-                partition = Partition(self, computation_amount, memory)
-                partition.id = len(self.partitions)
-                if type(predecessor) in (tuple, list):
-                    portion = np.array([p.computation_amount for p in predecessor])
-                    portion = portion / sum(portion)
-                    for i, p in enumerate(predecessor):
-                        self.input_data_array[p.id, partition.id] = int(input_data_size * portion[i])
-                        partition.predecessors.append(p)
-                else:
-                    self.input_data_array[predecessor.id, partition.id] = input_data_size
-                    partition.predecessors.append(predecessor)
-                self.partitions.append(partition)
-                predecessor = partition
-                #print("chain", predecessor.id)
-            #print("chain return", predecessor.id)
-            #print("chain return", predecessor)
-            return predecessor
-
-        elif type(opt) in (tuple, list):
-            for element in opt:
-                #print("chain element", element)
-                if element[0] == TYPE_CHAIN:
-                    predecessor = self.create_chain_partition(predecessor, element[1])
-                elif element[0] == TYPE_PARALLEL:
-                    predecessor = self.create_parallel_partition(predecessor, element[1])
-                else:
-                    raise RuntimeError('Unknown opt type!!')
-            return predecessor
-
-    def create_parallel_partition(self, predecessor, opt):
-        #print("parallel opt", opt)
-        if type(opt) == int:
-            parallel_partitions = list()
-            for _ in range(opt):
-                input_data_size = random.randint(64, 512) # 64KB~1MB
-                computation_amount = input_data_size * COMP_RATIO
-                memory = input_data_size * MEM_RATIO
-                partition = Partition(self, computation_amount, memory)
-                partition.id = len(self.partitions)
-                if type(predecessor) in (tuple, list):
-                    portion = np.array([p.computation_amount for p in predecessor])
-                    portion = portion / sum(portion)
-                    for i, p in enumerate(predecessor):
-                        self.input_data_array[p.id, partition.id] = int(input_data_size * portion[i])
-                        partition.predecessors.append(p)
-                else:
-                    self.input_data_array[predecessor.id, partition.id] = input_data_size
-                    partition.predecessors.append(predecessor)
-                self.partitions.append(partition)
-                parallel_partitions.append(partition)
-            #print("parallel return", len(parallel_partitions))
-            #print("parallel return", parallel_partitions)
-            return parallel_partitions
-
-        elif type(opt) in (tuple, list):
-            parallel_partitions = list()
-            for element in opt:
-                #print("parallel element", element)
-                if element[0] == TYPE_CHAIN:
-                    parallel_partitions.append(self.create_chain_partition(predecessor, element[1]))
-                elif element[0] == TYPE_PARALLEL:
-                    parallel_partitions.append(self.create_parallel_partition(predecessor, element[1]))
-                else:
-                    raise RuntimeError('Unknown opt type!!')
-            return parallel_partitions
+            self.ready_time = ready_time
+        if finish_time is None:
+            self.finish_time = np.zeros(shape=len(self.partitions))
+        else:
+            self.finish_time = finish_time
+        
+        return self.partitions[partition_id].get_task_finish_time(net_manager), self.ready_time, self.finish_time
 
     def update_successor(self, successor):
         for predecessor in successor.predecessors:
@@ -449,69 +365,72 @@ class ServiceSet:
 
 class Server:
     #  elements with computing power
-    def __init__(self, cpu, memory, ipc, **kwargs):
+    def __init__(self, computing_frequency, computing_intensity, memory, **kwargs):
         self.id = None
-        self.cpu = cpu * ipc
-        self.cpu_clk = cpu
+        self.computing_frequency = computing_frequency
+        self.computing_intensity = computing_intensity
         self.memory = memory
-        self.ipc = ipc
         self.deployed_partition = dict()
-        self.deployed_partition_mem = dict()
-        if not hasattr(self, "energy"):  # battery
-            self.energy = 100.
-        if not hasattr(self, "tau"):   # timeslot
-            self.tau = 60. * 60.    # 1hour default
-        if not hasattr(self, "capacitance"):  # capacitance value (need reference)
-            self.capacitance = 1e-6
+        self.deployed_partition_memory = dict()
+        if not hasattr(self, "max_energy"):  # max battery
+            self.max_energy = 10.
+        if not hasattr(self, "cur_energy"):  # current battery
+            self.cur_energy = 10.
         if not hasattr(self, "system_manager"):
             self.system_manager = None
-        if not hasattr(self, "min_energy"):
-            self.min_energy = 1.0
-        if not hasattr(self, "max_energy"):
-            self.max_energy = 10.0
+        if not hasattr(self, "min_energy_consumption"):
+            self.min_energy_consumption = 1.0
+        if not hasattr(self, "max_energy_consumption"):
+            self.max_energy_consumption = 10.0
 
         for key, value in kwargs.items():
             setattr(self, key, value)
 
     def reset(self):
+        self.free()
+        self.cur_energy = self.max_energy
+
+    def free(self):
         while self.deployed_partition:
             _, partition = self.deployed_partition.popitem()
             partition.reset()
-        if self.deployed_partition_mem:
-            self.deployed_partition_mem.clear()
+        if self.deployed_partition_memory:
+            self.deployed_partition_memory.clear()
 
     def deploy_one(self, partition):
         self.deployed_partition[partition.id] = partition
-        self.deployed_partition_mem[partition.id] = partition.memory
+        self.deployed_partition_memory[partition.id] = partition.memory
 
     def undeploy_one(self, partition):
         self.deployed_partition.pop(partition.id)
-        self.deployed_partition_mem.pop(partition.id)
+        self.deployed_partition_memory.pop(partition.id)
 
     def constraint_chk(self, *args):
-        if sum(self.deployed_partition_mem.values()) <= self.memory and self.energy_consumption() <= self.energy:
+        if len(self.deployed_partition) == 0:
+            return True
+        elif max(self.deployed_partition_memory.values(), default=0) <= self.memory and self.energy_consumption() <= self.cur_energy:
             return True
         else:
             return False
 
     def energy_update(self):
-        self.energy -= self.energy_consumption()
-        if self.energy <= 0.:
-            self.energy = 0.
-            self.reset()
+        self.cur_energy -= self.energy_consumption()
+        if self.cur_energy <= 0.:
+            self.cur_energy = 0.
+            self.free()
 
     def energy_consumption(self):
-        if self.id in self.system_manager.edge:
+        if self.id in self.system_manager.local:
             E_d = self.computation_energy_consumption() + self.transmission_energy_consumption()
-            return E_d #* self.system_manager.partition_arrival[c.id]
+            return E_d
         else:
             return 0
 
     def computation_energy_consumption(self):
-        E_cp_d = self.min_energy
+        E_cp_d = self.min_energy_consumption
         for c in self.deployed_partition.values():
             T_cp = c.get_computation_time()
-            E_cp_d += (self.max_energy - self.min_energy) * T_cp
+            E_cp_d += (self.max_energy_consumption - self.min_energy_consumption) * T_cp * self.system_manager.partition_arrival[c.id]
         return E_cp_d
 
     def transmission_energy_consumption(self):
@@ -521,45 +440,5 @@ class Server:
             for succ in c.successors:
                 T_tr = self.system_manager.net_manager.communication(c.get_output_data_size(succ), self.system_manager.deployed_server[c.id], self.system_manager.deployed_server[succ.id])
                 E_tr_dnm += self.system_manager.net_manager.P_dd[self.system_manager.deployed_server[c.id], self.system_manager.deployed_server[succ.id]] * T_tr
-            E_tr_d += E_tr_dnm
+            E_tr_d += E_tr_dnm * self.system_manager.partition_arrival[c.id]
         return E_tr_d
-
-
-
-
-if __name__=="__main__":
-    service_set = ServiceSet()
-    num_services = 1
-    deadline_opt = (10, 100)
-    max_partitions = 5
-    for i in range(num_services):
-        # create service
-        deadline = random.uniform(deadline_opt[0], deadline_opt[1])
-        svc = Service(deadline)
-
-        # create partitions
-        dag_shape = (0, ((1, random.randint(2, max_partitions)), (0, random.randint(1, max_partitions)), (1, ((0, random.randint(1, max_partitions)), (0, random.randint(1, max_partitions)))), (0, 1)))
-        dag_size = svc.calc_service_size(shape=dag_shape) + 1
-        print("dag_shape", dag_shape)
-        print("dag_size", dag_size)
-        input()
-        svc.input_data_array = np.zeros(shape=(dag_size, dag_size), dtype=np.int32)
-        svc.create_partitions(opt=dag_shape)
-
-        service_set.add_services(svc)
-
-    for svc in service_set.services:
-        for partition in svc.partitions:
-            print("-------------------------")
-            print("partition", partition.id)
-            predecessors = list()
-            successors = list()
-            for p in partition.predecessors:
-                predecessors.append(p.id)
-            for p in partition.successors:
-                successors.append(p.id)
-            print("predecessor", predecessors)
-            print("input data", [svc.input_data_array[p, partition.id] for p in predecessors])
-            print("successor", successors)
-        print("input_data_array", svc.input_data_array)
-        input()

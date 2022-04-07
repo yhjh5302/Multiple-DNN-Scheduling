@@ -5,7 +5,7 @@ from A3C.a3c import A3CAgent
 from A2C.a2c import A2CAgent
 from DQN.dqn import DQN, dqn_train, dqn_test
 from DQN.evaluator import Evaluator
-from HEFT.heft import HEFT
+from genetic import HEFT
 from util import *
 import time
 import argparse
@@ -32,13 +32,13 @@ def dqn_main(env, args):
     print("num_actions:", env.action_space.shape)
 
     agent = DQN(env, num_states, num_actions, args)
-    evaluate = Evaluator(args.validate_episodes, args.max_timeslot, args.max_step, 1, save_path=args.output)
+    evaluate = Evaluator(args.validate_episodes, args.num_timeslots, args.max_step, 1, save_path=args.output)
 
     if args.mode == 'train':
         args.debug = True
-        dqn_train(num_episodes=args.train_episodes, num_timeslots=args.max_timeslot, max_step=args.max_step, validate_episodes=args.validate_episodes, agent=agent, env=env, evaluate=evaluate, output=args.output, warmup=args.warmup, debug=args.debug)
+        dqn_train(num_episodes=args.train_episodes, num_timeslots=args.num_timeslots, max_step=args.max_step, validate_episodes=args.validate_episodes, agent=agent, env=env, evaluate=evaluate, output=args.output, warmup=args.warmup, debug=args.debug)
     #elif args.mode == 'test':
-    #    dqn_test(args.validate_episodes, args.max_timeslot, args.max_step, agent, env, evaluate, args.resume, visualize=True, debug=args.debug)
+    #    dqn_test(args.validate_episodes, args.num_timeslots, args.max_step, agent, env, evaluate, args.resume, visualize=True, debug=args.debug)
     else:
         raise RuntimeError('undefined mode {}'.format(args.mode))
 
@@ -61,24 +61,37 @@ if __name__ == "__main__":
 
     from dag_env import DAGEnv
     gym.envs.register(id='DAGEnv-v0', entry_point='dag_env:DAGEnv', max_episode_steps=10000, reward_threshold=np.inf)
-    env = gym.make("DAGEnv-v0", max_timeslot=3)
+    env = gym.make("DAGEnv-v0", num_timeslots=3)
     print("observation:", env.observation_space.shape[0])
     print("action:", env.action_space.shape[0])
 
-    # HEFT
-    greedy = HEFT(dataset=env.data_set)
     start = time.time()
-    x, y = greedy.run_algo()
-    env.data_set.system_manager.set_env(deployed_server=x, execution_order=y)
+    greedy = HEFT(dataset=env.data_set)
+    x_lst, y_lst = greedy.run_algo()
+    end = time.time()
+    total_time = []
+    total_energy = []
+    total_reward = []
     print("---------- Greedy Algorithm ----------")
-    print("x: ", env.data_set.system_manager.deployed_server)
-    print("y: ", y)
-    print([s.constraint_chk() for s in env.data_set.system_manager.server.values()])
-    #print("t: ", env.data_set.system_manager.total_time())
-    print("reward: {:.3f}".format(env.data_set.system_manager.get_reward(cur_p_id=-1, timeslot=0)))
-    #print("average_reward: {:.3f}".format(sum([env.data_set.system_manager.get_reward(cur_p_id=env.scheduling_lst[i], timeslot=0) for i in range(env.data_set.num_partitions)]) / env.data_set.num_partitions))
-    print([env.data_set.system_manager.get_reward(cur_p_id=env.scheduling_lst[i], timeslot=0) for i in range(env.data_set.num_partitions)])
-    #print("took: {:.3f} sec".format(time.time() - start))
+    env.data_set.system_manager.init_env()
+    for t in range(env.data_set.num_timeslots):
+        x = np.array(x_lst[t])
+        y = np.array(y_lst[t])
+        env.data_set.system_manager.set_env(deployed_server=x, execution_order=y)
+        print("#timeslot {} x: {}".format(t, x))
+        #print("#timeslot {} y: {}".format(t, y))
+        #print("#timeslot {} constraint: {}".format(t, [s.constraint_chk() for s in env.data_set.system_manager.server.values()]))
+        #print("#timeslot {} m: {}".format(t, [(s.memory - sum(s.deployed_partition_mem.values())) / s.memory for s in env.data_set.system_manager.server.values()]))
+        #print("#timeslot {} e: {}".format(t, [s.cur_energy - s.energy_consumption() for s in env.data_set.system_manager.server.values()]))
+        #print("#timeslot {} t: {}".format(t, env.data_set.system_manager.total_time()))
+        total_time.append(sum(env.data_set.system_manager.total_time()))
+        total_energy.append(sum([s.energy_consumption() for s in env.data_set.system_manager.edge.values()]))
+        total_reward.append(env.data_set.system_manager.get_reward())
+        env.data_set.system_manager.after_timeslot(deployed_server=x, timeslot=t)
+    print("mean t: {:.5f}".format(sum(total_time) / env.data_set.num_timeslots))
+    print("mean e: {:.5f}".format(sum(total_energy) / env.data_set.num_timeslots))
+    print("mean r: {:.5f}".format(sum(total_reward) / env.data_set.num_timeslots))
+    print("took: {:.5f} sec".format(end - start))
     print("---------- Greedy Algorithm ----------\n")
 
     layers = [1024, 1024, 1024, 1024, 512, 512, 512, 512, 512, 512]
@@ -101,7 +114,7 @@ if __name__ == "__main__":
     # parser.add_argument('--window_length', default=1, type=int, help='')
     # parser.add_argument('--tau', default=0.005, type=float, help='moving average for target network')
     # parser.add_argument('--train_episodes', default=10000, type=int, help='how many episodes to train')
-    # parser.add_argument('--max_timeslot', default=1, type=int, help='how many timeslots do we consider')
+    # parser.add_argument('--num_timeslots', default=1, type=int, help='how many timeslots do we consider')
     # parser.add_argument('--max_step', default=env.data_set.num_partitions, type=int, help='how many steps to perform during each timeslot')
     # parser.add_argument('--validate_episodes', default=1, type=int, help='how many episodes to perform during validate experiment')
     # parser.add_argument('--output', default='output', type=str, help='')
