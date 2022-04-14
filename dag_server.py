@@ -146,11 +146,11 @@ class SystemManager():
 
     def get_reward(self):
         T_n = self.total_time()
-        #U_n = self.calc_utility(T_n)
+        U_n = self.calc_utility(T_n)
         #print("T_n", T_n)
         #print("U_n", U_n)
 
-        utility_factor = 1/sum(T_n)
+        utility_factor = sum(U_n)
 
         energy_factor = []
         for d in self.local.values():
@@ -158,7 +158,7 @@ class SystemManager():
             energy_factor.append(E_d)
         energy_factor = 1 / np.sum(energy_factor)
 
-        reward = utility_factor #+ energy_factor / 100
+        reward = utility_factor + energy_factor / 100
         #print("energy_factor", energy_factor)
         #print("utility_factor", utility_factor)
         return reward
@@ -167,7 +167,7 @@ class SystemManager():
         U_n = np.zeros(shape=(self.num_services, ))
         for n, svc in enumerate(self.service_set.services):
             T_n_hat = svc.deadline
-            alpha = 5
+            alpha = 2
             if T_n[n] < T_n_hat:
                 U_n[n] = 1
             elif T_n_hat <= T_n[n] and T_n[n] < alpha * T_n_hat:
@@ -182,6 +182,16 @@ class SystemManager():
         self.average_computing_power = np.mean([s.computing_frequency / s.computing_intensity for s in self.server.values()])
 
     def calc_rank_u(self, partition):    # rank_u for heft
+        w_i = partition.workload_size / self.average_computing_power
+        communication_cost = [0,]
+        for succ in partition.successors:
+            c_ij = partition.get_output_data_size(succ) / self.average_bandwidth
+            if self.rank_u[succ.id] == 0:
+                self.calc_rank_u(succ)
+            communication_cost.append(c_ij + self.rank_u[succ.id])
+        self.rank_u[partition.id] = w_i + max(communication_cost)
+
+    def calc_rank_real(self, partition):    # rank_real for heft
         w_i = partition.workload_size / self.average_computing_power
         communication_cost = [0,]
         for succ in partition.successors:

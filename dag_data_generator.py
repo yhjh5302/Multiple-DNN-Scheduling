@@ -8,14 +8,28 @@ from multilevel_graph_partitioning import MultiLevelGraphPartitioning
 class DAGDataSet:
     def __init__(self, num_timeslots):
         self.num_timeslots = num_timeslots
-        self.apply_partition = False
+        self.apply_partition = True
         self.svc_set, self.system_manager = self.data_gen()
-        self.graph_coarsening(num_partitions=32)
+        self.coarsened_graph, self.tran_time, self.proc_time = self.graph_coarsening(num_partitions=50)
+        
+        # test
+        # y = np.array(sorted(zip(self.system_manager.rank_u, np.arange(self.num_partitions)), reverse=True), dtype=np.int32)[:,1]
+        # x = np.random.randint(low=self.num_servers-2, high=self.num_servers-1, size=(self.num_partitions))
+        # self.system_manager.set_env(deployed_server=x, execution_order=y)
+        # print('total_time', self.system_manager.total_time())
+        # print('tran_time', sum(self.tran_time.values()))
+        # print('proc_time', sum(self.proc_time))
+        # input()
 
     def create_arrival_rate(self, num_services, minimum, maximum):
         return minimum + (maximum - minimum) * np.random.random(num_services)
 
     def cnn_partitioning(self, layer_info, min_unit):
+        if layer_info['layer_name'] == 'conv1':
+            min_unit = 4
+        elif layer_info['layer_name'] == 'maxpool1' or layer_info['layer_name'] == 'conv2' or layer_info['layer_name'] == 'conv3':
+            min_unit = 2
+
         min_unit_partitions = []
         output_data_location = []
         num_partitions = math.floor(layer_info['output_height'] / min_unit)
@@ -237,8 +251,7 @@ class DAGDataSet:
 
             # graph partitioning algorithm
             p_algo = MultiLevelGraphPartitioning(dataset=self, num_partitions=num_partitions)
-            p_algo.run_algo()
-            input()
+            return p_algo.run_algo()
             
             # predecessor, successor check
             # for local search optimization
@@ -254,12 +267,6 @@ class DAGDataSet:
                 predcessors_id = [pred.id for pred in p.total_predecessors]
                 successors_id = [succ.id for succ in p.total_successors]
                 p.total_pred_succ_id = predcessors_id + successors_id
-
-            # dag structure error check
-            for p1 in svc.partitions:
-                for p2 in svc.partitions:
-                    if ((p1,p2) in svc.input_data_size.keys() and (p2,p1) in svc.output_data_size.keys()) and svc.input_data_size[(p1,p2)] != svc.output_data_size[(p2,p1)]:
-                        raise RuntimeError("DAG input output data mismatch!!", (p1.layer_name, p2.layer_name))
 
 if __name__=="__main__":
     d = DAGDataSet(num_timeslots=24)

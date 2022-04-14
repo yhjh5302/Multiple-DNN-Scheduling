@@ -74,7 +74,7 @@ cloud_server_info = [
 service_info = [
     # GoogLeNet
     {
-        'deadline':1.7,
+        'deadline':1.0, # second
         'layers':[
             {
                 'layer_name':'conv1',

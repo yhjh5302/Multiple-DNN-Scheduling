@@ -13,15 +13,25 @@ class PSOGA:
         self.system_manager = dataset.system_manager
         self.num_servers = dataset.num_servers
         self.num_services = dataset.num_services
-        self.num_partitions = dataset.num_partitions
         self.num_timeslots = dataset.num_timeslots
 
-        self.scheduling_lst = np.array(sorted(zip(self.system_manager.rank_u, np.arange(self.num_partitions)), reverse=True), dtype=np.int32)[:,1]
+        self.graph = np.unique(dataset.coarsened_graph)
+        self.num_partitions = len(np.unique(dataset.coarsened_graph))
+        self.uncoarsened_graph = dataset.coarsened_graph
+        self.num_uncoarsened_partitons = dataset.num_partitions
+
+        self.scheduling_lst = np.array(sorted(zip(self.system_manager.rank_u, np.arange(self.num_uncoarsened_partitons)), reverse=True), dtype=np.int32)[:,1]
 
         self.w_max = w_max            # constant inertia max weight (how much to weigh the previous velocity)
         self.w_min = w_min            # constant inertia min weight (how much to weigh the previous velocity)
         self.c1 = c1                  # cognative constant
         self.c2 = c2                  # social constant
+    
+    def get_uncoarsened_x(self, x):
+        uncoarsened_x = np.zeros(self.num_uncoarsened_partitons)
+        for i, x_i in enumerate(x):
+            uncoarsened_x[np.where(self.uncoarsened_graph==self.graph[i])] = x_i
+        return uncoarsened_x
 
     def update_w(self, x_t, g_t):
         ps = 0
@@ -38,58 +48,30 @@ class PSOGA:
         return temp
 
     def generate_random_solutions(self):
-        solutions = []
-        for _ in range(self.num_particles):
-            x = np.random.randint(low=self.num_servers-2, high=self.num_servers-1, size=(self.num_timeslots, self.num_partitions))
-            y = []
-            for _ in range(self.num_timeslots):
-                y.append(self.scheduling_lst)
-            solutions.append(np.concatenate([x, np.array(y)], axis=-1))
-        solutions = np.array(solutions)
-        return solutions
+        return np.random.randint(low=self.num_servers-2, high=self.num_servers-1, size=(self.num_particles, self.num_timeslots, self.num_partitions))
     
     def local_search_multiprocessing(self, action):
-        x_lst = np.array(action[:,:self.num_partitions])
-        y_lst = np.array(action[:,self.num_partitions:])
         self.system_manager.init_env()
         for t in range(self.num_timeslots):
-            self.deployed_server_reparation(x_lst[t], y_lst[t])
+            self.deployed_server_reparation(action[t])
 
             for j in np.random.choice(self.num_partitions, size=1, replace=False): # for jth layer
                 # local search x: deployed_server
-                self.system_manager.set_env(deployed_server=x_lst[t], execution_order=y_lst[t])
+                self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(action[t]), execution_order=self.scheduling_lst)
                 min_time = sum(self.system_manager.total_time())
                 for s_id in range(self.num_servers-1):
-                    if s_id == x_lst[t,j]:
+                    if s_id == action[t,j]:
                         continue
-                    temp = x_lst[t,j]
-                    x_lst[t,j] = s_id
-                    self.system_manager.set_env(deployed_server=x_lst[t], execution_order=y_lst[t])
+                    temp = action[t,j]
+                    action[t,j] = s_id
+                    self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(action[t]), execution_order=self.scheduling_lst)
                     cur_time = sum(self.system_manager.total_time())
-                    if cur_time < min_time and all(self.system_manager.constraint_chk(deployed_server=x_lst[t], execution_order=y_lst[t])):
+                    if cur_time < min_time and all(self.system_manager.constraint_chk(deployed_server=self.get_uncoarsened_x(action[t]), execution_order=self.scheduling_lst)):
                         min_time = cur_time
                     else:
-                        x_lst[t,j] = temp
+                        action[t,j] = temp
 
-            for j in np.random.choice(self.num_partitions, size=2, replace=False): # for jth layer
-                # local search y: execution order
-                for p_id in range(self.num_partitions):
-                    if p_id == j or p_id in self.system_manager.service_set.partitions[j].total_pred_succ_id:
-                        continue
-                    temp = y_lst[t,j]
-                    y_lst[t,j] = y_lst[t,p_id]
-                    y_lst[t,p_id] = temp
-                    self.system_manager.set_env(deployed_server=x_lst[t], execution_order=y_lst[t])
-                    cur_time = sum(self.system_manager.total_time())
-                    if cur_time < min_time and all(self.system_manager.constraint_chk(deployed_server=x_lst[t], execution_order=y_lst[t])):
-                        min_time = cur_time
-                    else:
-                        temp = y_lst[t,j]
-                        y_lst[t,j] = y_lst[t,p_id]
-                        y_lst[t,p_id] = temp
-
-            self.system_manager.after_timeslot(deployed_server=x_lst[t], execution_order=y_lst[t], timeslot=t)
-        action = np.concatenate([x_lst, y_lst], axis=-1)
+            self.system_manager.after_timeslot(deployed_server=self.get_uncoarsened_x(action[t]), execution_order=self.scheduling_lst, timeslot=t)
         return action
 
     # we have to find local optimum from current chromosomes.
@@ -100,7 +82,7 @@ class PSOGA:
         np.random.shuffle(local_idx)
 
         working_queue = [action[i] for i in local_idx]
-        with mp.Pool(processes=1) as pool:
+        with mp.Pool(processes=30) as pool:
             temp = list(pool.map(self.local_search_multiprocessing, working_queue))
         action[local_idx] = np.array(temp)
         return action
@@ -132,11 +114,8 @@ class PSOGA:
                 total_energy = []
                 total_reward = []
                 for t in range(self.num_timeslots):
-                    x = np.array(g_t[t,:self.num_partitions])
-                    y = np.array(g_t[t,self.num_partitions:])
-                    self.system_manager.set_env(deployed_server=x, execution_order=y)
-                    print("#timeslot {} x: {}".format(t, x))
-                    #print("#timeslot {} y: {}".format(t, y))
+                    self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(g_t[t]), execution_order=self.scheduling_lst)
+                    print("#timeslot {} x: {}".format(t, g_t[t]))
                     print("#timeslot {} constraint: {}".format(t, [s.constraint_chk() for s in self.system_manager.server.values()]))
                     #print("#timeslot {} m: {}".format(t, [(s.memory - max(s.deployed_partition_memory.values(), default=0)) / s.memory for s in self.system_manager.server.values()]))
                     #print("#timeslot {} e: {}".format(t, [s.cur_energy - s.energy_consumption() for s in self.system_manager.server.values()]))
@@ -144,12 +123,12 @@ class PSOGA:
                     total_time.append(sum(self.system_manager.total_time()))
                     total_energy.append(sum([s.energy_consumption() for s in self.system_manager.local.values()]))
                     total_reward.append(self.system_manager.get_reward())
-                    self.system_manager.after_timeslot(deployed_server=x, execution_order=y, timeslot=t)
+                    self.system_manager.after_timeslot(deployed_server=self.get_uncoarsened_x(g_t[t]), execution_order=self.scheduling_lst, timeslot=t)
                 print("mean t: {:.5f}".format(sum(total_time) / self.num_timeslots))
                 print("mean e: {:.5f}".format(sum(total_energy) / self.num_timeslots))
                 print("mean r: {:.5f}".format(sum(total_reward) / self.num_timeslots))
                 print("took: {:.5f} sec".format(end - start))
-        return g_t[:,:self.num_partitions], g_t[:,self.num_partitions:]
+        return np.array([self.get_uncoarsened_x(g_t[t]) for t in range(self.num_timeslots)]), np.array([self.scheduling_lst for t in range(self.num_timeslots)])
 
     def selection(self, x_t, p_t=None, g_t=None, p_t_eval_lst=None):
         if p_t is None and g_t is None:
@@ -171,26 +150,13 @@ class PSOGA:
     def crossover_multiprocessing(self, input):
         a_t, b_t = input
         for t in range(self.num_timeslots):
-            a_x = a_t[t,:self.num_partitions]
-            a_y = a_t[t,self.num_partitions:]
-            b_x = b_t[t,:self.num_partitions]
-            b_y = b_t[t,self.num_partitions:]
-
+            a_x = a_t[t]
+            b_x = b_t[t]
             cross_point = np.random.randint(low=0, high=a_x.size, size=2)
 
             # crossover x: deployed_server
             a_x[cross_point[0]:cross_point[1]] = b_x[cross_point[0]:cross_point[1]]
             a_t[t,:self.num_partitions] = a_x
-
-            # crossover y: execution_order
-            for j in range(cross_point[0], cross_point[1]):
-                for k in range(self.num_partitions):
-                    if b_y[j] == a_y[k]:
-                        temp = a_y[j]
-                        a_y[j] = a_y[k]
-                        a_y[k] = temp
-                        break
-            a_t[t,self.num_partitions:] = a_y
         return a_t
 
     def crossover(self, a_t, b_t, crossover_rate, is_global=False):
@@ -210,24 +176,13 @@ class PSOGA:
 
     def mutation_multiprocessing(self, v_t):
         for t in range(self.num_timeslots):
-            x = v_t[t,:self.num_partitions]
-            y = v_t[t,self.num_partitions:]
+            x = v_t[t]
 
             mutation_point = np.random.randint(low=0, high=self.num_partitions)
 
             # mutate x: deployed_server
             x[mutation_point] = np.random.randint(low=0, high=self.num_servers-1)
             v_t[t,:self.num_partitions] = x
-
-            # mutate y: execution_order
-            rand = np.random.randint(low=0, high=self.num_partitions)
-            for k in range(self.num_partitions):
-                if rand == y[k]:
-                    temp = y[mutation_point]
-                    y[mutation_point] = y[k]
-                    y[k] = temp
-                    break
-            v_t[t,self.num_partitions:] = y
         return v_t
 
     def mutation(self, x_t, g_t, mutation_ratio=None):
@@ -247,36 +202,33 @@ class PSOGA:
         return v_t
 
     # convert invalid action to valid action, deployed server action.
-    def deployed_server_reparation(self, x, y):
+    def deployed_server_reparation(self, x):
         server_lst = list(self.system_manager.local.keys()) + list(self.system_manager.edge.keys())
         cloud_lst = list(self.system_manager.cloud.keys())
-        while False in self.system_manager.constraint_chk(deployed_server=x, execution_order=y):
+        while False in self.system_manager.constraint_chk(deployed_server=self.get_uncoarsened_x(x), execution_order=self.scheduling_lst):
             # 각 서버에 대해서,
             for s_id in range(self.num_servers-1):
                 deployed_container_lst = list(np.where(x == s_id)[0])
                 random.shuffle(deployed_container_lst)
                 # 서버가 넘치는 경우,
-                while self.system_manager.constraint_chk(deployed_server=x, execution_order=y, s_id=s_id) == False:
+                while self.system_manager.constraint_chk(deployed_server=self.get_uncoarsened_x(x), execution_order=self.scheduling_lst, s_id=s_id) == False:
                     # 해당 서버에 deployed되어있는 partition 중 하나를 자원이 충분한 랜덤 서버로 보냄.
                     c_id = deployed_container_lst.pop() # random partition 하나를 골라서
                     random.shuffle(server_lst)
                     for another_s_id in server_lst + cloud_lst: # 아무 서버에다가 (클라우드는 예외처리용임. 알고리즘에서는 넘치는걸 가정하지 않음.)
-                        if s_id != another_s_id and self.system_manager.server[another_s_id].cur_energy > 0 and self.system_manager.constraint_chk(deployed_server=x, execution_order=y, s_id=another_s_id):
+                        if s_id != another_s_id and self.system_manager.server[another_s_id].cur_energy > 0 and self.system_manager.constraint_chk(deployed_server=self.get_uncoarsened_x(x), execution_order=self.scheduling_lst, s_id=another_s_id):
                             x[c_id] = another_s_id # 한번 넣어보고
-                            if self.system_manager.constraint_chk(deployed_server=x, execution_order=y, s_id=another_s_id): # 자원 넘치는지 확인.
+                            if self.system_manager.constraint_chk(deployed_server=self.get_uncoarsened_x(x), execution_order=self.scheduling_lst, s_id=another_s_id): # 자원 넘치는지 확인.
                                 break
                             else:
                                 x[c_id] = s_id # 자원 넘치면 롤백
 
     # convert invalid action to valid action, multiprocessing function.
     def reparation_multiprocessing(self, postition):
-        x_lst = np.array(postition[:,:self.num_partitions])
-        y_lst = np.array(postition[:,self.num_partitions:])
         self.system_manager.init_env()
         for t in range(self.num_timeslots):
-            self.deployed_server_reparation(x_lst[t], y_lst[t])
-            self.system_manager.after_timeslot(deployed_server=x_lst[t], execution_order=y_lst[t], timeslot=t)
-        postition = np.concatenate([x_lst, y_lst], axis=-1)
+            self.deployed_server_reparation(postition[t])
+            self.system_manager.after_timeslot(deployed_server=self.get_uncoarsened_x(postition[t]), execution_order=self.scheduling_lst, timeslot=t)
         return postition
 
     # convert invalid action to valid action.
@@ -288,14 +240,12 @@ class PSOGA:
         return postitions
     
     def evaluation_multiprocessing(self, postition):
-        x_lst = np.array(postition[:,:self.num_partitions])
-        y_lst = np.array(postition[:,self.num_partitions:])
         self.system_manager.init_env()
         reward = []
         for t in range(self.num_timeslots):
-            self.system_manager.set_env(deployed_server=x_lst[t], execution_order=y_lst[t])
+            self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(postition[t]), execution_order=self.scheduling_lst)
             reward.append(self.system_manager.get_reward())
-            self.system_manager.after_timeslot(deployed_server=x_lst[t], execution_order=y_lst[t], timeslot=t)
+            self.system_manager.after_timeslot(deployed_server=self.get_uncoarsened_x(postition[t]), execution_order=self.scheduling_lst, timeslot=t)
         return reward
 
     def evaluation(self, postitions):
@@ -312,24 +262,20 @@ class Genetic(PSOGA):
         self.system_manager = dataset.system_manager
         self.num_servers = dataset.num_servers
         self.num_services = dataset.num_services
-        self.num_partitions = dataset.num_partitions
         self.num_timeslots = dataset.num_timeslots
+
+        self.graph = np.unique(dataset.coarsened_graph)
+        self.num_partitions = len(np.unique(dataset.coarsened_graph))
+        self.uncoarsened_graph = dataset.coarsened_graph
+        self.num_uncoarsened_partitons = dataset.num_partitions
+
+        self.scheduling_lst = np.array(sorted(zip(self.system_manager.rank_u, np.arange(self.num_uncoarsened_partitons)), reverse=True), dtype=np.int32)[:,1]
 
         self.mutation_ratio = mutation_ratio
         self.cross_over_ratio = cross_over_ratio
 
-        self.scheduling_lst = np.array(sorted(zip(self.system_manager.rank_u, np.arange(self.num_partitions)), reverse=True), dtype=np.int32)[:,1]
-
     def generate_random_solutions(self):
-        solutions = []
-        for _ in range(self.num_solutions):
-            x = np.random.randint(low=self.num_servers-2, high=self.num_servers-1, size=(self.num_timeslots, self.num_partitions))
-            y = []
-            for _ in range(self.num_timeslots):
-                y.append(self.scheduling_lst)
-            solutions.append(np.concatenate([x, np.array(y)], axis=-1))
-        solutions = np.array(solutions)
-        return solutions
+        return np.random.randint(low=self.num_servers-2, high=self.num_servers-1, size=(self.num_solutions, self.num_timeslots, self.num_partitions))
 
     def run_algo(self, loop, verbose=True, local_search=True):
         ev_lst = np.zeros(loop, dtype=np.float_)
@@ -341,7 +287,6 @@ class Genetic(PSOGA):
             p_t = self.local_search(p_t, local_prob=0.2)
 
         for i in range(loop):
-            start = time.time()
             q_t = self.selection(p_t, p_known)
 
             q_t = self.crossover(q_t, self.cross_over_ratio)
@@ -363,11 +308,8 @@ class Genetic(PSOGA):
                 total_energy = []
                 total_reward = []
                 for t in range(self.num_timeslots):
-                    x = np.array(p_t[0,t,:self.num_partitions])
-                    y = np.array(p_t[0,t,self.num_partitions:])
-                    self.system_manager.set_env(deployed_server=x, execution_order=y)
-                    print("#timeslot {} x: {}".format(t, x))
-                    #print("#timeslot {} y: {}".format(t, y))
+                    self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(p_t[0,t]), execution_order=self.scheduling_lst)
+                    print("#timeslot {} x: {}".format(t, p_t[0,t]))
                     print("#timeslot {} constraint: {}".format(t, [s.constraint_chk() for s in self.system_manager.server.values()]))
                     #print("#timeslot {} m: {}".format(t, [(s.memory - max(s.deployed_partition_memory.values(), default=0)) / s.memory for s in self.system_manager.server.values()]))
                     #print("#timeslot {} e: {}".format(t, [s.cur_energy - s.energy_consumption() for s in self.system_manager.server.values()]))
@@ -375,12 +317,12 @@ class Genetic(PSOGA):
                     total_time.append(sum(self.system_manager.total_time()))
                     total_energy.append(sum([s.energy_consumption() for s in self.system_manager.local.values()]))
                     total_reward.append(self.system_manager.get_reward())
-                    self.system_manager.after_timeslot(deployed_server=x, execution_order=y, timeslot=t)
+                    self.system_manager.after_timeslot(deployed_server=self.get_uncoarsened_x(p_t[0,t]), execution_order=self.scheduling_lst, timeslot=t)
                 print("mean t: {:.5f}".format(sum(total_time) / self.num_timeslots))
                 print("mean e: {:.5f}".format(sum(total_energy) / self.num_timeslots))
                 print("mean r: {:.5f}".format(sum(total_reward) / self.num_timeslots))
                 print("took: {:.5f} sec".format(end - start))
-        return p_t[0,:,:self.num_partitions], p_t[0,:,self.num_partitions:]
+        return np.array([self.get_uncoarsened_x(p_t[0,t]) for t in range(self.num_timeslots)]), np.array([self.scheduling_lst for t in range(self.num_timeslots)])
 
     @staticmethod
     def union(*args):
@@ -418,10 +360,8 @@ class Genetic(PSOGA):
     def crossover_multiprocessing(self, input):
         a_t, b_t = input
         for t in range(self.num_timeslots):
-            a_x = a_t[t,:self.num_partitions]
-            a_y = a_t[t,self.num_partitions:]
-            b_x = b_t[t,:self.num_partitions]
-            b_y = b_t[t,self.num_partitions:]
+            a_x = a_t[t]
+            b_x = b_t[t]
 
             cross_point = np.random.randint(low=1, high=a_x.size - 1)
 
@@ -431,24 +371,6 @@ class Genetic(PSOGA):
             b_x[:cross_point] = temp
             a_t[t,:self.num_partitions] = a_x
             b_t[t,:self.num_partitions] = b_x
-
-            # crossover y: execution_order
-            temp_a_y = np.copy(a_y)
-            temp_b_y = np.copy(b_y)
-            a_y[:cross_point] = b_y[:cross_point]
-            for j in range(cross_point, a_y.size):
-                for k in temp_a_y:
-                    if k not in a_y[:j]:
-                        a_y[j] = k
-                        break
-            b_y[:cross_point] = a_y[:cross_point]
-            for j in range(cross_point, b_y.size):
-                for k in temp_b_y:
-                    if k not in b_y[:j]:
-                        b_y[j] = k
-                        break
-            a_t[t,self.num_partitions:] = a_y
-            b_t[t,self.num_partitions:] = b_y
         action = np.concatenate([a_t.reshape(1,self.num_timeslots,-1), b_t.reshape(1,self.num_timeslots,-1)], axis=0)
         return action
 
@@ -467,24 +389,12 @@ class Genetic(PSOGA):
         return action
 
     def mutation_multiprocessing(self, action):
-        x_lst = np.array(action[:,:self.num_partitions])
-        y_lst = np.array(action[:,self.num_partitions:])
         for t in range(self.num_timeslots):
             mutation_point = np.random.randint(low=0, high=self.num_partitions)
 
             # mutate x: deployed_server
-            x_lst[t,mutation_point] = np.random.randint(low=0, high=self.num_servers-1)
-
-            # mutate y: execution_order
-            rand = np.random.randint(low=0, high=self.num_partitions)
-            for j in range(self.num_partitions):
-                if rand == y_lst[t,j]:
-                    temp = y_lst[t,mutation_point]
-                    y_lst[t,mutation_point] = y_lst[t,j]
-                    y_lst[t,j] = temp
-                    break
-        action = np.concatenate([x_lst, y_lst], axis=-1).reshape(1,self.num_timeslots,-1)
-        return action
+            action[t,mutation_point] = np.random.randint(low=0, high=self.num_servers-1)
+        return action.reshape(1,self.num_timeslots,-1)
 
     def mutation(self, action, mutation_ratio):
         mutation_idx = np.random.rand(self.num_solutions)
@@ -549,7 +459,6 @@ def result(x_lst, y_lst, took, algorithm_name):
         y = np.array(y_lst[t])
         dataset.system_manager.set_env(deployed_server=x, execution_order=y)
         print("#timeslot {} x: {}".format(t, x))
-        #print("#timeslot {} y: {}".format(t, y))
         print("#timeslot {} constraint: {}".format(t, [s.constraint_chk() for s in dataset.system_manager.server.values()]))
         #print("#timeslot {} m: {}".format(t, [(s.memory - max(s.deployed_partition_memory.values(), default=0)) / s.memory for s in dataset.system_manager.server.values()]))
         #print("#timeslot {} e: {}".format(t, [s.cur_energy - s.energy_consumption() for s in dataset.system_manager.server.values()]))
@@ -563,27 +472,84 @@ def result(x_lst, y_lst, took, algorithm_name):
     print("mean r: {:.5f}".format(sum(total_reward) / dataset.num_timeslots))
     print("took: {:.5f} sec".format(took))
     print("---------- Greedy Algorithm ----------\n")
+    return total_time, total_energy, total_reward
 
 
 if __name__=="__main__":
+    # for DAG recursive functions
+    import sys
+    print('recursion limit', sys.getrecursionlimit())
+    sys.setrecursionlimit(10000)
+
     dataset = dag_data_generator.DAGDataSet(num_timeslots=1)
 
     greedy = HEFT(dataset=dataset)
-    psoga = PSOGA(dataset=dataset, num_particles=200, w_max=0.2, w_min=0.05, c1=0.2, c2=0.1)
-    genetic = Genetic(dataset=dataset, num_solutions=200, mutation_ratio=0.1, cross_over_ratio=0.1)
+    psoga = PSOGA(dataset=dataset, num_particles=100, w_max=0.2, w_min=0.05, c1=0.2, c2=0.1)
+    genetic = Genetic(dataset=dataset, num_solutions=100, mutation_ratio=0.1, cross_over_ratio=0.1)
 
     start = time.time()
     x_lst, y_lst = greedy.run_algo()
-    result(x_lst, y_lst, took=time.time()-start, algorithm_name="Greedy Algorithm")
-    input()
+    heft_result = result(x_lst, y_lst, took=time.time()-start, algorithm_name="Greedy Algorithm")
 
-    # for svc in dataset.system_manager.service_set.services:
-    #     svc.deadline = np.mean(total_time)
-
-    # start = time.time()
-    # x_lst, y_lst = psoga.run_algo(loop=300, verbose=50, local_search=True)
-    # result(x_lst, y_lst, took=time.time()-start, algorithm_name="PSO-GA Algorithm")
+    dataset.system_manager.set_env(deployed_server=x_lst[0], execution_order=y_lst[0])
+    for svc in dataset.system_manager.service_set.services:
+        svc.deadline = np.mean(dataset.system_manager.total_time())
 
     start = time.time()
-    x_lst, y_lst = genetic.run_algo(loop=300, verbose=50, local_search=True)
-    result(x_lst, y_lst, took=time.time()-start, algorithm_name="Genetic Algorithm")
+    x_lst, y_lst = psoga.run_algo(loop=500, verbose=100, local_search=False)
+    psoga_result = result(x_lst, y_lst, took=time.time()-start, algorithm_name="PSO-GA Algorithm")
+
+    start = time.time()
+    x_lst, y_lst = genetic.run_algo(loop=500, verbose=100, local_search=False)
+    genetic_result = result(x_lst, y_lst, took=time.time()-start, algorithm_name="Genetic Algorithm")
+
+    coedge = True
+    if coedge:
+        import config
+        coedge_partition = dict()
+        for i in range(7):
+            coedge_partition[i] = []
+        for l in config.service_info[0]['layers']:
+            if l['layer_name'] == 'conv1':
+                for i in range(6):
+                    start = math.floor(math.floor(l['output_height'] / 4) / 6 * i)
+                    end = math.floor(math.floor(l['output_height'] / 4) / 6 * (i + 1))
+                    for j in range(start, end):
+                        coedge_partition[i].append(l['layer_name']+'_'+str(j))
+            elif l['layer_name'] == 'maxpool1' or l['layer_name'] == 'conv2' or l['layer_name'] == 'conv3':
+                for i in range(6):
+                    start = math.floor(math.floor(l['output_height'] / 2) / 6 * i)
+                    end = math.floor(math.floor(l['output_height'] / 2) / 6 * (i + 1))
+                    for j in range(start, end):
+                        coedge_partition[i].append(l['layer_name']+'_'+str(j))
+            elif l['layer_type'] == 'cnn' or l['layer_type'] == 'maxpool':
+                for i in range(6):
+                    start = math.floor(l['output_height'] / 6 * i)
+                    end = math.floor(l['output_height'] / 6 * (i + 1))
+                    for j in range(start, end):
+                        coedge_partition[i].append(l['layer_name']+'_'+str(j))
+            elif l['layer_type'] == 'fc':
+                minimum_unit = 768
+                start = 0
+                end = math.floor(l['input_height'] * l['input_width'] * l['input_channel'] / 768)
+                for j in range(start, end):
+                    coedge_partition[6].append(l['layer_name']+'_'+str(j))
+
+        for p_id in range(dataset.num_partitions):
+            for i in range(7):
+                if dataset.system_manager.service_set.partitions[p_id].layer_name in coedge_partition[i]:
+                    dataset.coarsened_graph[p_id] = i
+
+    coedge_psoga = PSOGA(dataset=dataset, num_particles=100, w_max=0.2, w_min=0.05, c1=0.2, c2=0.1)
+    coedge_genetic = Genetic(dataset=dataset, num_solutions=100, mutation_ratio=0.1, cross_over_ratio=0.1)
+
+    start = time.time()
+    x_lst, y_lst = coedge_psoga.run_algo(loop=100, verbose=100, local_search=False)
+    coedge_psoga_result = result(x_lst, y_lst, took=time.time()-start, algorithm_name="CoEdge PSO-GA Algorithm")
+
+    start = time.time()
+    x_lst, y_lst = coedge_genetic.run_algo(loop=100, verbose=100, local_search=False)
+    coedge_genetic_result = result(x_lst, y_lst, took=time.time()-start, algorithm_name="CoEdge Genetic Algorithm")
+
+
+    import matplotlib.pyplot as plt

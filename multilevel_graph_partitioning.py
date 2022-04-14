@@ -4,6 +4,7 @@ import numpy as np
 import multiprocessing as mp
 import math
 import time
+from itertools import groupby
 
 class MultiLevelGraphPartitioning:
     def __init__(self, dataset, num_partitions):
@@ -67,7 +68,9 @@ class MultiLevelGraphPartitioning:
         for (pred_id, succ_id) in self.tran_time.keys():
             self.path_e[(pred_id, succ_id)] = self.rank_down[pred_id] + self.proc_time[succ_id] + self.tran_time[(pred_id, succ_id)] + self.rank_up[succ_id]
 
-    def refinement(self, graph, W_e, next_graph, next_W_e):
+    def refinement(self, graph, W_e, tran_time, rank_down,
+                   next_graph, next_W_e, next_tran_time, next_rank_down):
+        print(len(np.unique(next_graph)))
         coarsened_graph = np.unique(graph)
         next_coarsened_graph = np.unique(next_graph)
         boundary_node_set = []
@@ -79,11 +82,10 @@ class MultiLevelGraphPartitioning:
                 uncut_edges_gain = sum([next_W_e[edge] for edge in edges if graph[edge[0]] == graph[edge[1]]])
                 cut_edges_gain = sum([next_W_e[edge] for edge in edges if graph[edge[0]] != graph[edge[1]]])
                 boundary_node_set.append(node)
-                gain_queue.append(cut_edges_gain - uncut_edges_gain)
+                gain_queue.append(uncut_edges_gain - cut_edges_gain)
         
         gain_priority_queue = sorted(zip(gain_queue, boundary_node_set), reverse=True)
-        print("boundary_node_set", len(boundary_node_set), boundary_node_set)
-        print(gain_priority_queue)
+        # print("gain_priority_queue", len(gain_priority_queue), gain_priority_queue)
 
         # find 
         sequence = []
@@ -96,39 +98,42 @@ class MultiLevelGraphPartitioning:
             
         for (node, gain_sum) in sequence:
             edges = [edge for edge in next_W_e.keys() if node in edge]
-            neighbor_partitions = [graph[edge[1]] if node == edge[0] else graph[edge[0]] for edge in edges]
+            neighbor_partitions = [graph[edge[1]] if node in edge else graph[edge[0]] for edge in edges]
             uncut_edges_gain = sum([next_W_e[edge] for edge in edges if graph[edge[0]] == graph[edge[1]]])
             cut_edges_gain = sum([next_W_e[edge] for edge in edges if graph[edge[0]] != graph[edge[1]]])
-            gain = cut_edges_gain - uncut_edges_gain
+            gain = uncut_edges_gain - cut_edges_gain
             testt = graph[node]
-            print(self.system_manager.service_set.partitions[node].layer_name, [self.system_manager.service_set.partitions[u].layer_name for u in np.where(graph == testt)[0]], "gain", gain)
+            #print(self.system_manager.service_set.partitions[node].layer_name, [self.system_manager.service_set.partitions[u].layer_name for u in np.where(graph == testt)[0]], "gain", gain)
             for neighbor in np.unique(neighbor_partitions):
                 temp = graph[node]
                 graph[np.where(next_graph == next_graph[node])] = neighbor
                 uncut_edges_gain = sum([next_W_e[edge] for edge in edges if graph[edge[0]] == graph[edge[1]]])
                 cut_edges_gain = sum([next_W_e[edge] for edge in edges if graph[edge[0]] != graph[edge[1]]])
-                new_gain = cut_edges_gain - uncut_edges_gain
+                new_gain = uncut_edges_gain - cut_edges_gain
                 if gain > new_gain:
                     gain = new_gain
                 else:
                     graph[np.where(next_graph == next_graph[node])] = temp
-            print(self.system_manager.service_set.partitions[node].layer_name, [self.system_manager.service_set.partitions[u].layer_name for u in np.where(graph == testt)[0]], "gain", gain)
-            input()
+            #print(self.system_manager.service_set.partitions[node].layer_name, [self.system_manager.service_set.partitions[u].layer_name for u in np.where(graph == testt)[0]], "gain", gain)
+            #print([self.system_manager.service_set.partitions[u].layer_name for u in np.where(graph == graph[node])[0]])
+            #input()
 
             gain_priority_queue.sort(key=lambda x: x[0])
-        print(sequence)
+        #### testout
+        print(len(W_e), len(np.unique(graph)))
+        # print(coarsened, graph)
+        lst = [(graph[id], self.system_manager.service_set.partitions[id].layer_name) for id in range(self.num_node)]
+        print([[item[1] for item in items] for key, items in groupby(sorted(lst, key=lambda x: x[0]), lambda x: x[0])])
         input()
-        return graph, W_e
+        return graph, W_e, tran_time, rank_down
 
     def run_algo(self):
-        from copy import deepcopy
-        from itertools import groupby
         graph = np.arange(start=0, stop=self.num_node)
         W_e = deepcopy(self.path_e)
         tran_time = deepcopy(self.tran_time)
         rank_down = deepcopy(self.rank_down)
-        cut_graph = [(deepcopy(graph), deepcopy(W_e))]
-        theta = self.num_partitions
+        cut_graph = [(deepcopy(graph), deepcopy(W_e), deepcopy(tran_time), deepcopy(rank_down))]
+        theta = math.floor(self.num_partitions * 4)
         print(len(W_e), len(np.unique(graph)))
 
         # Latency-path coarsening
@@ -143,20 +148,18 @@ class MultiLevelGraphPartitioning:
 
                     # find max W_e
                     for v in np.unique(graph):
-                        if coarsened[v] == True:
-                            continue
                         if (u, v) in W_e and W_e[(u, v)] > max_W_e:
                             max_W_e = W_e[(u, v)]
                             max_v = v
-                        elif (v, u) in W_e and W_e[(v, u)] > max_W_e:
-                            max_W_e = W_e[(v, u)]
+                        elif (u, v) in W_e and W_e[(u, v)] == max_W_e and coarsened[max_v] == True and coarsened[v] == False:
+                            max_W_e = W_e[(u, v)]
                             max_v = v
                     if max_v == None:
                         for v in np.unique(graph):
-                            if (u, v) in W_e and W_e[(u, v)] > max_W_e:
-                                max_W_e = W_e[(u, v)]
+                            if (v, u) in W_e and W_e[(v, u)] > max_W_e:
+                                max_W_e = W_e[(v, u)]
                                 max_v = v
-                            elif (v, u) in W_e and W_e[(v, u)] > max_W_e:
+                            elif (v, u) in W_e and W_e[(v, u)] == max_W_e and coarsened[max_v] == True and coarsened[v] == False:
                                 max_W_e = W_e[(v, u)]
                                 max_v = v
 
@@ -197,11 +200,35 @@ class MultiLevelGraphPartitioning:
                     for key in delete_lst:
                         del W_e[key]
                         del tran_time[key]
+                    
+                    # node name ordering (for readable result)
+                    if u > max_v:
+                        graph[np.where(graph==u)] = max_v
+                        delete_lst = []
+                        W_e_append_lst = dict()
+                        tran_time_append_lst = dict()
+                        for old_key in W_e.keys():
+                            if u in old_key:
+                                delete_lst.append(old_key)
+                                if old_key[0] == u:
+                                    new_key = (max_v, old_key[1])
+                                elif old_key[1] == u:
+                                    new_key = (old_key[0], max_v)
+                                W_e_append_lst[new_key] = W_e[old_key]
+                                tran_time_append_lst[new_key] = tran_time[old_key]
+                        W_e.update(W_e_append_lst)
+                        tran_time.update(tran_time_append_lst)
+                        for key in delete_lst:
+                            del W_e[key]
+                            del tran_time[key]
+                    W_e = {k: v for k, v in sorted(W_e.items(), key = lambda item: item[0])}
+                    tran_time = {k: v for k, v in sorted(tran_time.items(), key = lambda item: item[0])}
+
                     if not len(np.unique(graph)) >= theta:
                         break
 
             if len(np.unique(graph)) >= theta:
-                cut_graph.append((deepcopy(graph), deepcopy(W_e)))
+                cut_graph.append((deepcopy(graph), deepcopy(W_e), deepcopy(tran_time), deepcopy(rank_down)))
 
                 #### testout
                 print(len(W_e), len(np.unique(graph)))
@@ -211,10 +238,97 @@ class MultiLevelGraphPartitioning:
                 # input()
         
         # Latency-path initial partition
-        graph, W_e = cut_graph.pop()
-        while len(cut_graph) > 0:
-            graph, W_e = self.refinement(graph, W_e, *cut_graph.pop())
-        
+        graph, W_e, tran_time, rank_down = deepcopy(cut_graph[-1])
+        temp_graph = []
+        temp_graph.append((deepcopy(graph), deepcopy(W_e), deepcopy(tran_time), deepcopy(rank_down)))
+        while len(np.unique(graph)) > self.num_partitions:
+            node_order = np.array(sorted(zip(rank_down, graph), reverse=False), dtype=np.int32)[:,1]
+            coarsened = np.full(shape=self.num_node, fill_value=False, dtype=np.bool8)
+            for u in node_order:
+                if coarsened[u] == False:
+                    coarsened[np.where(graph==u)] = True
+                    max_W_e = 0
+                    max_v = None
 
-        input("Latency-path coarsening done...")
-        return 
+                    # find max W_e
+                    for v in np.unique(graph):
+                        if (u, v) in W_e and W_e[(u, v)] > max_W_e and coarsened[v] == False:
+                            max_W_e = W_e[(u, v)]
+                            max_v = v
+                    if max_v == None:
+                        continue
+
+                    # coarsening
+                    coarsened[np.where(graph==max_v)] = True
+                    graph[np.where(graph==max_v)] = u
+
+                    # update rank_down
+                    rank_down[np.where(graph==u)] = max(rank_down[u], rank_down[max_v])
+
+                    # update W_e
+                    delete_lst = []
+                    W_e_append_lst = dict()
+                    tran_time_append_lst = dict()
+                    for (pred_id, succ_id) in W_e:
+                        if pred_id == max_v:
+                            if succ_id == u:
+                                pass
+                            elif (u, succ_id) in W_e:
+                                W_e[(u, succ_id)] = W_e[(u, succ_id)] + W_e[(max_v, succ_id)]
+                                tran_time[(u, succ_id)] = tran_time[(u, succ_id)] + tran_time[(max_v, succ_id)]
+                            else:
+                                W_e_append_lst[(u, succ_id)] = W_e[(max_v, succ_id)]
+                                tran_time_append_lst[(u, succ_id)] = tran_time[(max_v, succ_id)]
+                            delete_lst.append((max_v, succ_id))
+                        elif succ_id == max_v:
+                            if pred_id == u:
+                                pass
+                            elif (pred_id, u) in W_e:
+                                W_e[(pred_id, u)] = W_e[(pred_id, u)] + W_e[(pred_id, max_v)]
+                                tran_time[(pred_id, u)] = tran_time[(pred_id, u)] + tran_time[(pred_id, max_v)]
+                            else:
+                                W_e_append_lst[(pred_id, u)] = W_e[(pred_id, max_v)]
+                                tran_time_append_lst[(pred_id, u)] = tran_time[(pred_id, max_v)]
+                            delete_lst.append((pred_id, max_v))
+                    W_e.update(W_e_append_lst)
+                    tran_time.update(tran_time_append_lst)
+                    for key in delete_lst:
+                        del W_e[key]
+                        del tran_time[key]
+                    
+                    # node name ordering (for readable result)
+                    if u > max_v:
+                        graph[np.where(graph==u)] = max_v
+                        delete_lst = []
+                        W_e_append_lst = dict()
+                        tran_time_append_lst = dict()
+                        for old_key in W_e.keys():
+                            if u in old_key:
+                                delete_lst.append(old_key)
+                                if old_key[0] == u:
+                                    new_key = (max_v, old_key[1])
+                                elif old_key[1] == u:
+                                    new_key = (old_key[0], max_v)
+                                W_e_append_lst[new_key] = W_e[old_key]
+                                tran_time_append_lst[new_key] = tran_time[old_key]
+                        W_e.update(W_e_append_lst)
+                        tran_time.update(tran_time_append_lst)
+                        for key in delete_lst:
+                            del W_e[key]
+                            del tran_time[key]
+                    W_e = {k: v for k, v in sorted(W_e.items(), key = lambda item: item[0])}
+                    tran_time = {k: v for k, v in sorted(tran_time.items(), key = lambda item: item[0])}
+                    
+                    if not len(np.unique(graph)) >= self.num_partitions:
+                        break
+            if len(np.unique(graph)) >= self.num_partitions:
+                temp_graph.append((deepcopy(graph), deepcopy(W_e), deepcopy(tran_time), deepcopy(rank_down)))
+        graph, W_e, tran_time, rank_down = temp_graph.pop()
+
+        ### testout
+        print(len(W_e), len(np.unique(graph)))
+        # print(coarsened, graph)
+        # lst = [(graph[id], self.system_manager.service_set.partitions[id].layer_name) for id in range(self.num_node)]
+        # print([[item[1] for item in items] for key, items in groupby(sorted(lst, key=lambda x: x[0]), lambda x: x[0])])
+        # input()
+        return graph, tran_time, self.proc_time
