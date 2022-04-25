@@ -1,9 +1,11 @@
 from collections import deque
 from os import times
+from time import time
 import random
 import math
-from time import time
 import numpy as np
+
+import dag_completion_time
 
 
 COMP_RATIO = 50*(10**6) # computation per input data (50 MFLOPS)
@@ -11,7 +13,7 @@ MEM_RATIO = 1024 # memory usage per input data (1 KB)
 
 
 class NetworkManager:  # managing data transfer
-    def __init__(self, channel_bandwidth, channel_gain, gaussian_noise, B_edge, B_cloud, system_manager):
+    def __init__(self, channel_bandwidth, channel_gain, gaussian_noise, B_edge, B_cloud, local, edge, cloud):
         self.C = channel_bandwidth
         self.g_wd = channel_gain
         self.sigma_w = gaussian_noise
@@ -20,16 +22,19 @@ class NetworkManager:  # managing data transfer
         self.B_cloud = B_cloud
         self.B_dd = None
         self.P_dd = None
-        self.system_manager = system_manager
+
+        self.local = list(local.keys())
+        self.edge = list(edge.keys())
+        self.cloud = list(cloud.keys())
 
     def communication(self, amount, sender, receiver):
         if sender == receiver:
             return 0
-        elif sender in self.system_manager.local and receiver in self.system_manager.local:
+        elif sender in self.local and receiver in self.local:
             return amount / self.B_dd[sender, receiver]
-        elif sender in self.system_manager.cloud or receiver in self.system_manager.cloud:
+        elif sender in self.cloud or receiver in self.cloud:
             return amount / self.B_cloud
-        elif sender in self.system_manager.edge or receiver in self.system_manager.edge:
+        elif sender in self.edge or receiver in self.edge:
             return amount / self.B_edge
 
     def cal_b_dd(self):
@@ -59,6 +64,8 @@ class SystemManager():
         self.edge = None
         self.local = None
         self.server = None
+        self.computing_frequency = None
+        self.computing_intensity = None
 
         # service and partition info
         self.service_set = None
@@ -105,6 +112,12 @@ class SystemManager():
             for partition in svc.partitions:
                 self.partition_arrival[partition.id] = self.service_arrival[timeslot][svc.id]
 
+    def total_time_dp(self):
+        result = np.zeros(len(self.service_set.services), dtype=np.float_)
+        for svc in self.service_set.services:
+            result[svc.id] = svc.get_completion_time_dp(self.deployed_server, self.execution_order, self.computing_intensity, self.computing_frequency, self.net_manager)
+        return result
+
     def total_time(self):
         result = np.zeros(len(self.service_set.services), dtype=np.float_)
         for svc in self.service_set.services:
@@ -120,6 +133,8 @@ class SystemManager():
         self.cloud = cloud
         self.cloud_id = random.choice(list(cloud.keys()))
         self.server = {**local, **edge, **cloud}
+        self.computing_frequency = [s.computing_frequency for s in self.server.values()]
+        self.computing_intensity = [s.computing_intensity for s in self.server.values()]
 
     def init_env(self):
         for server in self.server.values():
@@ -145,7 +160,7 @@ class SystemManager():
         return np.array(next_state)
 
     def get_reward(self):
-        T_n = self.total_time()
+        T_n = self.total_time_dp()
         U_n = self.calc_utility(T_n)
         #print("T_n", T_n)
         #print("U_n", U_n)
@@ -243,10 +258,10 @@ class Partition:
             pred.find_total_successors()
 
     def get_input_data_size(self, pred):
-        return self.service.input_data_size[(pred, self)]
+        return self.service.input_data_size[(pred.id, self.id)]
 
     def get_output_data_size(self, succ):
-        return self.service.output_data_size[(self, succ)]
+        return self.service.output_data_size[(self.id, succ.id)]
 
     def get_deployed_server(self):
         return self.deployed_server
@@ -281,7 +296,7 @@ class Partition:
                 else:
                     TF_p = pred.get_task_finish_time(net_manager)
                     self.service.finish_time[pred.id] = TF_p
-                T_tr = net_manager.communication(self.get_input_data_size(pred), self.deployed_server.id, pred.deployed_server.id)
+                T_tr = net_manager.communication(self.get_input_data_size(pred), pred.deployed_server.id, self.deployed_server.id)
                 TR_n = max(TF_p + T_tr, TR_n)
         return TR_n
 
@@ -314,16 +329,48 @@ class Service:
         self.id = None
         self.partitions = list()
         self.deadline = deadline
+
+        # for DAG completion time calculation
+        self.num_partitions = None
         self.input_data_size = dict()
         self.output_data_size = dict()
+        self.partition_computation_amount = list()
+        self.partition_predecessor = list()
+        self.partition_successor = list()
+
+        self.deployed_server = None
+        self.execution_order = None
         self.ready_time = None
         self.finish_time = None
 
     #  calculate the total completion time of the dag
+    def get_completion_time_dp(self, deployed_server, execution_order, server_computing_intensity, server_computing_frequency, net_manager):
+        self.deployed_server = np.array(deployed_server, dtype=np.int32)
+        self.execution_order = np.zeros_like(execution_order, dtype=np.int32)
+        for k, v in enumerate(execution_order): self.execution_order[v] = k
+        node_weight = np.array(self.partition_computation_amount) * np.array([server_computing_intensity[s_id] for s_id in deployed_server]) / np.array([server_computing_frequency[s_id] for s_id in deployed_server])
+        edge_weight = dict()
+        for key, value in self.input_data_size.items():
+            if key[0] == key[1]:
+                edge_weight[key] = value / net_manager.B_gw
+            else:
+                edge_weight[key] = net_manager.communication(value, deployed_server[key[0]], deployed_server[key[1]])
+        partition_predecessor = dict()
+        for c, predecessors in enumerate(self.partition_predecessor):
+            partition_predecessor[c] = predecessors
+        partition_successor = dict()
+        for c, successors in enumerate(self.partition_successor):
+            partition_successor[c] = successors
+
+        # initialize
+        self.finish_time = dag_completion_time.get_completion_time(self.num_partitions, self.deployed_server, self.execution_order, node_weight, edge_weight, partition_predecessor, partition_successor)
+        return max(self.finish_time)
+
+    #  calculate the total completion time of the dag
     def get_completion_time(self, net_manager):
         # initialize
-        self.ready_time = np.zeros(shape=len(self.partitions))
-        self.finish_time = np.zeros(shape=len(self.partitions))
+        self.ready_time = np.zeros(shape=self.num_partitions)
+        self.finish_time = np.zeros(shape=self.num_partitions)
         for c in self.partitions:
             if len(c.predecessors) == 0:
                 self.ready_time[c.id] = c.get_task_ready_time(net_manager)
@@ -367,6 +414,7 @@ class ServiceSet:
     def add_services(self, svc):
         svc.id = len(self.services)
         self.services.append(svc)
+        svc.num_partitions = len(svc.partitions)
         for partition in svc.partitions:
             partition.id = len(self.partitions)
             partition.service = svc

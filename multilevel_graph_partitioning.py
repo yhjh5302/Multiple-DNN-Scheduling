@@ -122,9 +122,9 @@ class MultiLevelGraphPartitioning:
         #### testout
         print(len(W_e), len(np.unique(graph)))
         # print(coarsened, graph)
-        lst = [(graph[id], self.system_manager.service_set.partitions[id].layer_name) for id in range(self.num_node)]
-        print([[item[1] for item in items] for key, items in groupby(sorted(lst, key=lambda x: x[0]), lambda x: x[0])])
-        input()
+        # lst = [(graph[id], self.system_manager.service_set.partitions[id].layer_name) for id in range(self.num_node)]
+        # print([[item[1] for item in items] for key, items in groupby(sorted(lst, key=lambda x: x[0]), lambda x: x[0])])
+        # input()
         return graph, W_e, tran_time, rank_down
 
     def run_algo(self):

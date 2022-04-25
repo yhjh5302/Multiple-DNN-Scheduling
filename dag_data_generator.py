@@ -16,7 +16,7 @@ class DAGDataSet:
         # y = np.array(sorted(zip(self.system_manager.rank_u, np.arange(self.num_partitions)), reverse=True), dtype=np.int32)[:,1]
         # x = np.random.randint(low=self.num_servers-2, high=self.num_servers-1, size=(self.num_partitions))
         # self.system_manager.set_env(deployed_server=x, execution_order=y)
-        # print('total_time', self.system_manager.total_time())
+        # print('total_time', self.system_manager.total_time_dp())
         # print('tran_time', sum(self.tran_time.values()))
         # print('proc_time', sum(self.proc_time))
         # input()
@@ -160,7 +160,7 @@ class DAGDataSet:
             svc_set.add_services(svc)
 
             # predecessor, successor check
-            for partition in svc.partitions:
+            for p_id, partition in enumerate(svc.partitions):
                 for i in range(len(partition.predecessors)):
                     for c in svc.partitions:
                         if c.layer_name == partition.predecessors[i]:
@@ -169,24 +169,29 @@ class DAGDataSet:
                     for c in svc.partitions:
                         if c.layer_name == partition.successors[i]:
                             partition.successors[i] = c
+                if p_id != partition.id:
+                    raise RuntimeError("Partitions unordered! You have to sort the partition list in id order.")
+                svc.partition_computation_amount.append(partition.workload_size)
+                svc.partition_predecessor.append([pred.id for pred in partition.predecessors])
+                svc.partition_successor.append([succ.id for succ in partition.successors])
             
             # predecessor, successor data size check
             for partition in svc.partitions:
                 if len(partition.predecessors) > 0:
                     for i in range(len(partition.predecessors)):
-                        svc.input_data_size[(partition.predecessors[i],partition)] = partition.input_data_size[i]
+                        svc.input_data_size[(partition.predecessors[i].id,partition.id)] = partition.input_data_size[i]
                 else:
-                    svc.input_data_size[(partition,partition)] = partition.input_data_size
+                    svc.input_data_size[(partition.id,partition.id)] = partition.input_data_size
                 if len(partition.successors) > 0:
                     for i in range(len(partition.successors)):
-                        svc.output_data_size[(partition,partition.successors[i])] = partition.output_data_size[i]
+                        svc.output_data_size[(partition.id,partition.successors[i].id)] = partition.output_data_size[i]
                 else:
-                    svc.output_data_size[(partition,partition)] = partition.output_data_size
+                    svc.output_data_size[(partition.id,partition.id)] = partition.output_data_size
 
             # dag structure error check
             for p1 in svc.partitions:
                 for p2 in svc.partitions:
-                    if ((p1,p2) in svc.input_data_size.keys() and (p2,p1) in svc.output_data_size.keys()) and svc.input_data_size[(p1,p2)] != svc.output_data_size[(p2,p1)]:
+                    if ((p1.id,p2.id) in svc.input_data_size.keys() and (p2.id,p1.id) in svc.output_data_size.keys()) and svc.input_data_size[(p1.id,p2.id)] != svc.output_data_size[(p2.id,p1.id)]:
                         raise RuntimeError("DAG input output data mismatch!!", (p1.layer_name, p2.layer_name))
 
         self.num_services = len(svc_set.services)
@@ -221,7 +226,7 @@ class DAGDataSet:
             id += 1
 
         # create network manager
-        net_manager = NetworkManager(channel_bandwidth=1024*1024*40, channel_gain=1, gaussian_noise=1, B_edge=1024*1024*25, B_cloud=1024*1024*1, system_manager=system_manager)
+        net_manager = NetworkManager(channel_bandwidth=1024*1024*40, channel_gain=1, gaussian_noise=1, B_edge=1024*1024*25, B_cloud=1024*1024*1, local=local, edge=edge, cloud=cloud)
         net_manager.P_dd = np.zeros(shape=(self.num_servers, self.num_servers))
         for i in range(self.num_servers):
             for j in range(i + 1, self.num_servers):
@@ -267,7 +272,3 @@ class DAGDataSet:
                 predcessors_id = [pred.id for pred in p.total_predecessors]
                 successors_id = [succ.id for succ in p.total_successors]
                 p.total_pred_succ_id = predcessors_id + successors_id
-
-if __name__=="__main__":
-    d = DAGDataSet(num_timeslots=24)
-    d.data_gen()
