@@ -7,66 +7,68 @@ import time
 from itertools import groupby
 
 class MultiLevelGraphPartitioning:
-    def __init__(self, dataset, num_partitions):
+    def __init__(self, dataset):
         self.system_manager = dataset.system_manager
-        self.num_servers = dataset.num_servers
-        self.num_services = dataset.num_services
-        self.num_node = dataset.num_partitions
-        self.num_partitions = num_partitions
 
         self.average_computing_power = dataset.system_manager.average_computing_power
         self.average_bandwidth = dataset.system_manager.average_bandwidth
 
-        self.proc_time = np.zeros(self.num_node)
+        self.proc_time = dict()
         self.tran_time = dict()
-        # init times
-        for c in self.system_manager.service_set.partitions:
-            if len(c.predecessors) == 0:
-                self.get_time(c)
-
-        self.rank_up = np.zeros(self.num_node)
-        self.rank_down = np.zeros(self.num_node)
-        # init ranks
-        for id in range(self.num_node):
-            if self.rank_up[id] == 0:
-                self.calc_rank_up(id)
-        for id in range(self.num_node)[::-1]:
-            if self.rank_down[id] == 0:
-                self.calc_rank_down(id)
-
+        self.rank_up = dict()
+        self.rank_down = dict()
         self.path_e = dict()
-        # init path_e
-        self.calc_path_e()
+        for svc in dataset.svc_set.services:
+            self.proc_time[svc.id] = dict()
+            self.tran_time[svc.id] = dict()
+            # init times
+            for c in svc.partitions:
+                if len(c.predecessors) == 0:
+                    self.get_time(svc.id, c)
 
-    def get_time(self, partition):
-        if self.proc_time[partition.id] == 0:
-            self.proc_time[partition.id] = partition.workload_size / self.average_computing_power
+            self.rank_up[svc.id] = dict()
+            self.rank_down[svc.id] = dict()
+            # init ranks
+            for partition in svc.partitions:
+                if partition.id not in self.rank_up[svc.id]:
+                    self.calc_rank_up(svc.id, partition.id)
+            for partition in reversed(svc.partitions):
+                if partition.id not in self.rank_down[svc.id]:
+                    self.calc_rank_down(svc.id, partition.id)
+
+            self.path_e[svc.id] = dict()
+            # init path_e
+            self.calc_path_e(svc.id)
+
+    def get_time(self, svc_id, partition):
+        if partition.id not in self.proc_time[svc_id]:
+            self.proc_time[svc_id][partition.id] = partition.workload_size / self.average_computing_power
         for succ in partition.successors:
-            if (partition.id, succ.id) not in self.tran_time:
-                self.tran_time[(partition.id, succ.id)] = partition.get_output_data_size(succ) / self.average_bandwidth
-                self.get_time(succ)
+            if (partition.id, succ.id) not in self.tran_time[svc_id]:
+                self.tran_time[svc_id][(partition.id, succ.id)] = partition.get_output_data_size(succ) / self.average_bandwidth
+                self.get_time(svc_id, succ)
 
-    def calc_rank_up(self, id):    # rank up for multi-level partitioning
+    def calc_rank_up(self, svc_id, id):    # rank up for multi-level partitioning
         lst = [0,]
-        for (pred_id, succ_id) in self.tran_time.keys():
+        for (pred_id, succ_id) in self.tran_time[svc_id].keys():
             if pred_id == id:
-                if self.rank_up[succ_id] == 0:
-                    self.calc_rank_up(succ_id)
-                lst.append(self.proc_time[pred_id] + self.tran_time[(pred_id, succ_id)] + self.rank_up[succ_id])
-        self.rank_up[id] = max(lst)
+                if succ_id not in self.rank_up[svc_id]:
+                    self.calc_rank_up(svc_id, succ_id)
+                lst.append(self.proc_time[svc_id][pred_id] + self.tran_time[svc_id][(pred_id, succ_id)] + self.rank_up[svc_id][succ_id])
+        self.rank_up[svc_id][id] = max(lst)
 
-    def calc_rank_down(self, id):    # rank down for multi-level partitioning
-        lst = [self.proc_time[id],]
-        for (pred_id, succ_id) in self.tran_time.keys():
+    def calc_rank_down(self, svc_id, id):    # rank down for multi-level partitioning
+        lst = [self.proc_time[svc_id][id],]
+        for (pred_id, succ_id) in self.tran_time[svc_id].keys():
             if succ_id == id:
-                if self.rank_down[pred_id] == 0:
-                    self.calc_rank_down(pred_id)
-                lst.append(self.proc_time[succ_id] + self.tran_time[(pred_id, succ_id)] + self.rank_down[pred_id])
-        self.rank_down[id] = max(lst)
+                if pred_id not in self.rank_down[svc_id]:
+                    self.calc_rank_down(svc_id, pred_id)
+                lst.append(self.proc_time[svc_id][succ_id] + self.tran_time[svc_id][(pred_id, succ_id)] + self.rank_down[svc_id][pred_id])
+        self.rank_down[svc_id][id] = max(lst)
 
-    def calc_path_e(self):
-        for (pred_id, succ_id) in self.tran_time.keys():
-            self.path_e[(pred_id, succ_id)] = self.rank_down[pred_id] + self.proc_time[succ_id] + self.tran_time[(pred_id, succ_id)] + self.rank_up[succ_id]
+    def calc_path_e(self, svc_id):
+        for (pred_id, succ_id) in self.tran_time[svc_id].keys():
+            self.path_e[svc_id][(pred_id, succ_id)] = self.rank_down[svc_id][pred_id] + self.proc_time[svc_id][succ_id] + self.tran_time[svc_id][(pred_id, succ_id)] + self.rank_up[svc_id][succ_id]
 
     def refinement(self, graph, W_e, tran_time, rank_down,
                    next_graph, next_W_e, next_tran_time, next_rank_down):
@@ -122,26 +124,27 @@ class MultiLevelGraphPartitioning:
         #### testout
         print(len(W_e), len(np.unique(graph)))
         # print(coarsened, graph)
-        # lst = [(graph[id], self.system_manager.service_set.partitions[id].layer_name) for id in range(self.num_node)]
+        # lst = [(graph[p.id-p_start], self.system_manager.service_set.partitions[p.id].layer_name) for p in svc.partitions]
         # print([[item[1] for item in items] for key, items in groupby(sorted(lst, key=lambda x: x[0]), lambda x: x[0])])
         # input()
         return graph, W_e, tran_time, rank_down
 
-    def run_algo(self):
-        graph = np.arange(start=0, stop=self.num_node)
-        W_e = deepcopy(self.path_e)
-        tran_time = deepcopy(self.tran_time)
-        rank_down = deepcopy(self.rank_down)
+    def run_algo(self, svc, num_partitions):
+        graph = np.array([partition.id for partition in svc.partitions])
+        rank_down = np.array([self.rank_down[svc.id][partition.id] for partition in svc.partitions])
+        tran_time = deepcopy(self.tran_time[svc.id])
+        W_e = deepcopy(self.path_e[svc.id])
         cut_graph = [(deepcopy(graph), deepcopy(W_e), deepcopy(tran_time), deepcopy(rank_down))]
-        theta = math.floor(self.num_partitions * 4)
+        theta = math.floor(num_partitions * 4)
+        p_start = min(graph)
         print(len(W_e), len(np.unique(graph)))
 
         # Latency-path coarsening
         while len(np.unique(graph)) >= theta:
-            node_order = np.array(sorted(zip(rank_down, graph), reverse=False), dtype=np.int32)[:,1]
-            coarsened = np.full(shape=self.num_node, fill_value=False, dtype=np.bool8)
-            for u in node_order:
-                if coarsened[u] == False:
+            ordered_graph = np.array(sorted(zip(rank_down, graph), reverse=False), dtype=np.int32)[:,1]
+            coarsened = np.full(shape=svc.num_partitions, fill_value=False, dtype=np.bool8)
+            for u in ordered_graph:
+                if coarsened[u-p_start] == False:
                     coarsened[np.where(graph==u)] = True
                     max_W_e = 0
                     max_v = None
@@ -151,7 +154,7 @@ class MultiLevelGraphPartitioning:
                         if (u, v) in W_e and W_e[(u, v)] > max_W_e:
                             max_W_e = W_e[(u, v)]
                             max_v = v
-                        elif (u, v) in W_e and W_e[(u, v)] == max_W_e and coarsened[max_v] == True and coarsened[v] == False:
+                        elif (u, v) in W_e and W_e[(u, v)] == max_W_e and coarsened[max_v-p_start] == True and coarsened[v-p_start] == False:
                             max_W_e = W_e[(u, v)]
                             max_v = v
                     if max_v == None:
@@ -159,7 +162,7 @@ class MultiLevelGraphPartitioning:
                             if (v, u) in W_e and W_e[(v, u)] > max_W_e:
                                 max_W_e = W_e[(v, u)]
                                 max_v = v
-                            elif (v, u) in W_e and W_e[(v, u)] == max_W_e and coarsened[max_v] == True and coarsened[v] == False:
+                            elif (v, u) in W_e and W_e[(v, u)] == max_W_e and coarsened[max_v-p_start] == True and coarsened[v-p_start] == False:
                                 max_W_e = W_e[(v, u)]
                                 max_v = v
 
@@ -168,7 +171,7 @@ class MultiLevelGraphPartitioning:
                     graph[np.where(graph==max_v)] = u
 
                     # update rank_down
-                    rank_down[np.where(graph==u)] = max(rank_down[u], rank_down[max_v])
+                    rank_down[np.where(graph==u)] = max(rank_down[u-p_start], rank_down[max_v-p_start])
 
                     # update W_e
                     delete_lst = []
@@ -233,7 +236,7 @@ class MultiLevelGraphPartitioning:
                 #### testout
                 print(len(W_e), len(np.unique(graph)))
                 # print(coarsened, graph)
-                # lst = [(graph[id], self.system_manager.service_set.partitions[id].layer_name) for id in range(self.num_node)]
+                # lst = [(graph[p.id-p_start], self.system_manager.service_set.partitions[p.id].layer_name) for p in svc.partitions]
                 # print([[item[1] for item in items] for key, items in groupby(sorted(lst, key=lambda x: x[0]), lambda x: x[0])])
                 # input()
         
@@ -241,18 +244,18 @@ class MultiLevelGraphPartitioning:
         graph, W_e, tran_time, rank_down = deepcopy(cut_graph[-1])
         temp_graph = []
         temp_graph.append((deepcopy(graph), deepcopy(W_e), deepcopy(tran_time), deepcopy(rank_down)))
-        while len(np.unique(graph)) > self.num_partitions:
-            node_order = np.array(sorted(zip(rank_down, graph), reverse=False), dtype=np.int32)[:,1]
-            coarsened = np.full(shape=self.num_node, fill_value=False, dtype=np.bool8)
-            for u in node_order:
-                if coarsened[u] == False:
+        while len(np.unique(graph)) > num_partitions:
+            ordered_graph = np.array(sorted(zip(rank_down, graph), reverse=False), dtype=np.int32)[:,1]
+            coarsened = np.full(shape=svc.num_partitions, fill_value=False, dtype=np.bool8)
+            for u in ordered_graph:
+                if coarsened[u-p_start] == False:
                     coarsened[np.where(graph==u)] = True
                     max_W_e = 0
                     max_v = None
 
                     # find max W_e
                     for v in np.unique(graph):
-                        if (u, v) in W_e and W_e[(u, v)] > max_W_e and coarsened[v] == False:
+                        if (u, v) in W_e and W_e[(u, v)] > max_W_e and coarsened[v-p_start] == False:
                             max_W_e = W_e[(u, v)]
                             max_v = v
                     if max_v == None:
@@ -263,7 +266,7 @@ class MultiLevelGraphPartitioning:
                     graph[np.where(graph==max_v)] = u
 
                     # update rank_down
-                    rank_down[np.where(graph==u)] = max(rank_down[u], rank_down[max_v])
+                    rank_down[np.where(graph==u)] = max(rank_down[u-p_start], rank_down[max_v-p_start])
 
                     # update W_e
                     delete_lst = []
@@ -319,16 +322,16 @@ class MultiLevelGraphPartitioning:
                     W_e = {k: v for k, v in sorted(W_e.items(), key = lambda item: item[0])}
                     tran_time = {k: v for k, v in sorted(tran_time.items(), key = lambda item: item[0])}
                     
-                    if not len(np.unique(graph)) >= self.num_partitions:
+                    if not len(np.unique(graph)) >= num_partitions:
                         break
-            if len(np.unique(graph)) >= self.num_partitions:
+            if len(np.unique(graph)) >= num_partitions:
                 temp_graph.append((deepcopy(graph), deepcopy(W_e), deepcopy(tran_time), deepcopy(rank_down)))
         graph, W_e, tran_time, rank_down = temp_graph.pop()
 
         ### testout
         print(len(W_e), len(np.unique(graph)))
         # print(coarsened, graph)
-        # lst = [(graph[id], self.system_manager.service_set.partitions[id].layer_name) for id in range(self.num_node)]
+        # lst = [(graph[p.id-p_start], self.system_manager.service_set.partitions[p.id].layer_name) for p in svc.partitions]
         # print([[item[1] for item in items] for key, items in groupby(sorted(lst, key=lambda x: x[0]), lambda x: x[0])])
         # input()
         return graph, tran_time, self.proc_time

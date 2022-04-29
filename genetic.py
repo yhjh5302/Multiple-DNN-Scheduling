@@ -1,6 +1,7 @@
 import numpy as np
 import math
 import random
+import dag_completion_time
 from dag_data_generator import DAGDataSet
 
 import multiprocessing as mp
@@ -58,16 +59,16 @@ class PSOGA:
             for j in np.random.choice(self.num_partitions, size=1, replace=False): # for jth layer
                 # local search x: deployed_server
                 self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(action[t]), execution_order=self.scheduling_lst)
-                min_time = sum(self.system_manager.total_time_dp())
+                max_reward = self.system_manager.get_reward()
                 for s_id in range(self.num_servers-1):
                     if s_id == action[t,j]:
                         continue
                     temp = action[t,j]
                     action[t,j] = s_id
                     self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(action[t]), execution_order=self.scheduling_lst)
-                    cur_time = sum(self.system_manager.total_time_dp())
-                    if cur_time < min_time and all(self.system_manager.constraint_chk(deployed_server=self.get_uncoarsened_x(action[t]), execution_order=self.scheduling_lst)):
-                        min_time = cur_time
+                    cur_reward = self.system_manager.get_reward()
+                    if cur_reward > max_reward and all(self.system_manager.constraint_chk(deployed_server=self.get_uncoarsened_x(action[t]), execution_order=self.scheduling_lst)):
+                        max_reward = cur_reward
                     else:
                         action[t,j] = temp
 
@@ -79,8 +80,13 @@ class PSOGA:
         local_idx = np.random.rand(action.shape[0])
         local_idx = local_idx < local_prob
         local_idx = np.where(local_idx)[0]
+        if len(local_idx) == 0:
+            local_idx = np.array([np.random.randint(low=0, high=action.shape[0])])
         np.random.shuffle(local_idx)
 
+        temp = [self.local_search_multiprocessing(action[i]) for i in local_idx]
+        action[local_idx] = np.array(temp)
+        return action
         working_queue = [action[i] for i in local_idx]
         with mp.Pool(processes=30) as pool:
             temp = list(pool.map(self.local_search_multiprocessing, working_queue))
@@ -88,6 +94,10 @@ class PSOGA:
         return action
 
     def run_algo(self, loop, verbose=True, local_search=True):
+        start = time.time()
+        max_reward = 0
+        not_changed_loop = 0
+
         x_t = self.generate_random_solutions()
         x_t = self.reparation(x_t)
         if local_search:
@@ -95,7 +105,6 @@ class PSOGA:
         p_t, g_t, p_t_eval_lst = self.selection(x_t)
 
         for i in range(loop):
-            start = time.time()
             v_t = self.mutation(x_t, g_t)
             c_t = self.crossover(v_t, p_t, crossover_rate=self.c1)
             x_t = self.crossover(c_t, g_t, crossover_rate=self.c2, is_global=True)
@@ -105,10 +114,19 @@ class PSOGA:
                 x_t = self.local_search(x_t, local_prob=0.2)
             p_t, g_t, p_t_eval_lst = self.selection(x_t, p_t, g_t, p_t_eval_lst=p_t_eval_lst)
 
+            if max_reward < np.max(np.sum(p_t_eval_lst, axis=1)):
+                max_reward = np.max(np.sum(p_t_eval_lst, axis=1))
+                not_changed_loop = 0
+            elif not_changed_loop > 100:
+                print("\033[31mEarly exit loop {}: {:.5f} sec\033[0m".format(i, time.time() - start))
+                return np.array([self.get_uncoarsened_x(g_t[t]) for t in range(self.num_timeslots)]), np.array([self.scheduling_lst for t in range(self.num_timeslots)])
+            else:
+                not_changed_loop += 1
+
             # test
             end = time.time()
             if verbose and i % verbose == 0:
-                print("---------- #{} loop ----------".format(i))
+                print("---------- PSO-GA #{} loop ----------".format(i))
                 self.system_manager.init_env()
                 total_time = []
                 total_energy = []
@@ -127,7 +145,8 @@ class PSOGA:
                 print("mean t: {:.5f}".format(sum(total_time) / self.num_timeslots))
                 print("mean e: {:.5f}".format(sum(total_energy) / self.num_timeslots))
                 print("mean r: {:.5f}".format(sum(total_reward) / self.num_timeslots))
-                print("took: {:.5f} sec".format(end - start))
+                print("avg took: {:.5f} sec".format((end - start) / (i + 1)))
+                print("total took: {:.5f} sec".format(end - start))
         return np.array([self.get_uncoarsened_x(g_t[t]) for t in range(self.num_timeslots)]), np.array([self.scheduling_lst for t in range(self.num_timeslots)])
 
     def selection(self, x_t, p_t=None, g_t=None, p_t_eval_lst=None):
@@ -164,6 +183,8 @@ class PSOGA:
         crossover_idx = np.random.rand(self.num_particles)
         crossover_idx = crossover_idx < crossover_rate
         crossover_idx = np.where(crossover_idx)[0]
+        if len(crossover_idx) == 0:
+            crossover_idx = np.array([np.random.randint(low=0, high=self.num_particles)])
         
         if is_global:
             working_queue = [(new_a_t[i], b_t) for i in crossover_idx]
@@ -194,6 +215,8 @@ class PSOGA:
         mutation_idx = np.random.rand(self.num_particles)
         mutation_idx = mutation_idx < w
         mutation_idx = np.where(mutation_idx)[0]
+        if len(mutation_idx) == 0:
+            mutation_idx = np.array([np.random.randint(low=0, high=self.num_particles)])
         
         working_queue = [v_t[i] for i in mutation_idx]
         with mp.Pool(processes=30) as pool:
@@ -256,6 +279,230 @@ class PSOGA:
         return evaluation_lst
 
 
+class PSOGA_XY(PSOGA):
+    def generate_random_solutions(self):
+        solutions = []
+        for _ in range(self.num_particles):
+            x = np.random.randint(low=self.num_servers-2, high=self.num_servers-1, size=(self.num_timeslots, self.num_partitions))
+            y = []
+            for _ in range(self.num_timeslots):
+                y.append(self.scheduling_lst)
+            solutions.append(np.concatenate([x, np.array(y)], axis=-1))
+        solutions = np.array(solutions)
+        return solutions
+    
+    def local_search_multiprocessing(self, action):
+        x_lst = np.array(action[:,:self.num_partitions])
+        y_lst = np.array(action[:,self.num_partitions:])
+        self.system_manager.init_env()
+        for t in range(self.num_timeslots):
+            self.deployed_server_reparation(x_lst[t], y_lst[t])
+
+            for j in np.random.choice(self.num_partitions, size=1, replace=False): # for jth layer
+                # local search x: deployed_server
+                self.system_manager.set_env(deployed_server=x_lst[t], execution_order=y_lst[t])
+                max_reward = self.system_manager.get_reward()
+                for s_id in range(self.num_servers-1):
+                    if s_id == x_lst[t,j]:
+                        continue
+                    temp = x_lst[t,j]
+                    x_lst[t,j] = s_id
+                    self.system_manager.set_env(deployed_server=x_lst[t], execution_order=y_lst[t])
+                    cur_reward = self.system_manager.get_reward()
+                    if cur_reward > max_reward and all(self.system_manager.constraint_chk(deployed_server=x_lst[t], execution_order=y_lst[t])):
+                        max_reward = cur_reward
+                    else:
+                        x_lst[t,j] = temp
+
+            for j in np.random.choice(self.num_partitions, size=1, replace=False): # for jth layer
+                # local search y: execution order
+                for p_id in range(self.num_partitions):
+                    if p_id == j or p_id in self.system_manager.service_set.partitions[j].total_pred_succ_id:
+                        continue
+                    temp = y_lst[t,j]
+                    y_lst[t,j] = y_lst[t,p_id]
+                    y_lst[t,p_id] = temp
+                    self.system_manager.set_env(deployed_server=x_lst[t], execution_order=y_lst[t])
+                    cur_reward = self.system_manager.get_reward()
+                    if cur_reward > max_reward and all(self.system_manager.constraint_chk(deployed_server=x_lst[t], execution_order=y_lst[t])):
+                        max_reward = cur_reward
+                    else:
+                        temp = y_lst[t,j]
+                        y_lst[t,j] = y_lst[t,p_id]
+                        y_lst[t,p_id] = temp
+
+            self.system_manager.after_timeslot(deployed_server=x_lst[t], execution_order=y_lst[t], timeslot=t)
+        action = np.concatenate([x_lst, y_lst], axis=-1)
+        return action
+
+    def run_algo(self, loop, verbose=True, local_search=True):
+        start = time.time()
+        max_reward = 0
+        not_changed_loop = 0
+
+        x_t = self.generate_random_solutions()
+        x_t = self.reparation(x_t)
+        if local_search:
+            x_t = self.local_search(x_t, local_prob=0.2)
+        p_t, g_t, p_t_eval_lst = self.selection(x_t)
+
+        for i in range(loop):
+            v_t = self.mutation(x_t, g_t)
+            c_t = self.crossover(v_t, p_t, crossover_rate=self.c1)
+            x_t = self.crossover(c_t, g_t, crossover_rate=self.c2, is_global=True)
+            x_t = self.reparation(x_t)
+            
+            if local_search:
+                x_t = self.local_search(x_t, local_prob=0.2)
+            p_t, g_t, p_t_eval_lst = self.selection(x_t, p_t, g_t, p_t_eval_lst=p_t_eval_lst)
+
+            if max_reward < np.max(np.sum(p_t_eval_lst, axis=1)):
+                max_reward = np.max(np.sum(p_t_eval_lst, axis=1))
+                not_changed_loop = 0
+            elif not_changed_loop > 100:
+                print("\033[31mEarly exit loop {}: {:.5f} sec\033[0m".format(i, time.time() - start))
+                return g_t[:,:self.num_partitions], g_t[:,self.num_partitions:]
+            else:
+                not_changed_loop += 1
+
+            # test
+            end = time.time()
+            if verbose and i % verbose == 0:
+                print("---------- PSO-GA XY #{} loop ----------".format(i))
+                self.system_manager.init_env()
+                total_time = []
+                total_energy = []
+                total_reward = []
+                for t in range(self.num_timeslots):
+                    x = np.array(g_t[t,:self.num_partitions])
+                    y = np.array(g_t[t,self.num_partitions:])
+                    self.system_manager.set_env(deployed_server=x, execution_order=y)
+                    print("#timeslot {} x: {}".format(t, x))
+                    print("#timeslot {} y: {}".format(t, y))
+                    print("#timeslot {} constraint: {}".format(t, [s.constraint_chk() for s in self.system_manager.server.values()]))
+                    #print("#timeslot {} m: {}".format(t, [(s.memory - max(s.deployed_partition_memory.values(), default=0)) / s.memory for s in self.system_manager.server.values()]))
+                    #print("#timeslot {} e: {}".format(t, [s.cur_energy - s.energy_consumption() for s in self.system_manager.server.values()]))
+                    #print("#timeslot {} t: {}".format(t, self.system_manager.total_time_dp()))
+                    total_time.append(sum(self.system_manager.total_time_dp()))
+                    total_energy.append(sum([s.energy_consumption() for s in self.system_manager.local.values()]))
+                    total_reward.append(self.system_manager.get_reward())
+                    self.system_manager.after_timeslot(deployed_server=x, execution_order=y, timeslot=t)
+                print("mean t: {:.5f}".format(sum(total_time) / self.num_timeslots))
+                print("mean e: {:.5f}".format(sum(total_energy) / self.num_timeslots))
+                print("mean r: {:.5f}".format(sum(total_reward) / self.num_timeslots))
+                print("avg took: {:.5f} sec".format((end - start) / (i + 1)))
+                print("total took: {:.5f} sec".format(end - start))
+        return g_t[:,:self.num_partitions], g_t[:,self.num_partitions:]
+
+    def selection(self, x_t, p_t=None, g_t=None, p_t_eval_lst=None):
+        if p_t is None and g_t is None:
+            p_t_eval_lst = self.evaluation(x_t)
+            p_t_eval_sum = np.sum(p_t_eval_lst, axis=1)
+            p_t = np.copy(x_t)
+            g_t = np.copy(x_t[np.argmax(p_t_eval_sum),:,:])
+        else:
+            new_eval_lst = self.evaluation(x_t)
+            new_eval_sum = np.sum(new_eval_lst, axis=1)
+            p_t_eval_sum = np.sum(p_t_eval_lst, axis=1)
+            indices = np.where(new_eval_sum > p_t_eval_sum)
+            p_t[indices,:,:] = x_t[indices,:,:]
+            p_t_eval_lst[indices,:] = new_eval_lst[indices,:]
+            p_t_eval_sum[indices] = new_eval_sum[indices]
+            g_t = np.copy(p_t[np.argmax(p_t_eval_sum),:,:])
+        return p_t, g_t, p_t_eval_lst
+
+    def crossover_multiprocessing(self, input):
+        a_t, b_t = input
+        for t in range(self.num_timeslots):
+            a_x = a_t[t,:self.num_partitions]
+            a_y = a_t[t,self.num_partitions:]
+            b_x = b_t[t,:self.num_partitions]
+            b_y = b_t[t,self.num_partitions:]
+
+            cross_point = np.random.randint(low=0, high=a_x.size, size=2)
+
+            # crossover x: deployed_server
+            a_x[cross_point[0]:cross_point[1]] = b_x[cross_point[0]:cross_point[1]]
+            a_t[t,:self.num_partitions] = a_x
+
+            # crossover y: execution_order
+            for j in range(cross_point[0], cross_point[1]):
+                for k in range(self.num_partitions):
+                    if b_y[j] == a_y[k]:
+                        temp = a_y[j]
+                        a_y[j] = a_y[k]
+                        a_y[k] = temp
+                        break
+            a_t[t,self.num_partitions:] = a_y
+        return a_t
+
+    def mutation_multiprocessing(self, v_t):
+        for t in range(self.num_timeslots):
+            x = v_t[t,:self.num_partitions]
+            y = v_t[t,self.num_partitions:]
+
+            mutation_point = np.random.randint(low=0, high=self.num_partitions)
+
+            # mutate x: deployed_server
+            x[mutation_point] = np.random.randint(low=0, high=self.num_servers-1)
+            v_t[t,:self.num_partitions] = x
+
+            # mutate y: execution_order
+            rand = np.random.randint(low=0, high=self.num_partitions)
+            for k in range(self.num_partitions):
+                if rand == y[k]:
+                    temp = y[mutation_point]
+                    y[mutation_point] = y[k]
+                    y[k] = temp
+                    break
+            v_t[t,self.num_partitions:] = y
+        return v_t
+
+    # convert invalid action to valid action, deployed server action.
+    def deployed_server_reparation(self, x, y):
+        server_lst = list(self.system_manager.local.keys()) + list(self.system_manager.edge.keys())
+        cloud_lst = list(self.system_manager.cloud.keys())
+        while False in self.system_manager.constraint_chk(deployed_server=x, execution_order=y):
+            # 각 서버에 대해서,
+            for s_id in range(self.num_servers-1):
+                deployed_container_lst = list(np.where(x == s_id)[0])
+                random.shuffle(deployed_container_lst)
+                # 서버가 넘치는 경우,
+                while self.system_manager.constraint_chk(deployed_server=x, execution_order=y, s_id=s_id) == False:
+                    # 해당 서버에 deployed되어있는 partition 중 하나를 자원이 충분한 랜덤 서버로 보냄.
+                    c_id = deployed_container_lst.pop() # random partition 하나를 골라서
+                    random.shuffle(server_lst)
+                    for another_s_id in server_lst + cloud_lst: # 아무 서버에다가 (클라우드는 예외처리용임. 알고리즘에서는 넘치는걸 가정하지 않음.)
+                        if s_id != another_s_id and self.system_manager.server[another_s_id].cur_energy > 0 and self.system_manager.constraint_chk(deployed_server=x, execution_order=y, s_id=another_s_id):
+                            x[c_id] = another_s_id # 한번 넣어보고
+                            if self.system_manager.constraint_chk(deployed_server=x, execution_order=y, s_id=another_s_id): # 자원 넘치는지 확인.
+                                break
+                            else:
+                                x[c_id] = s_id # 자원 넘치면 롤백
+
+    # convert invalid action to valid action, multiprocessing function.
+    def reparation_multiprocessing(self, postition):
+        x_lst = np.array(postition[:,:self.num_partitions])
+        y_lst = np.array(postition[:,self.num_partitions:])
+        self.system_manager.init_env()
+        for t in range(self.num_timeslots):
+            self.deployed_server_reparation(x_lst[t], y_lst[t])
+            self.system_manager.after_timeslot(deployed_server=x_lst[t], execution_order=y_lst[t], timeslot=t)
+        postition = np.concatenate([x_lst, y_lst], axis=-1)
+        return postition
+    
+    def evaluation_multiprocessing(self, postition):
+        x_lst = np.array(postition[:,:self.num_partitions])
+        y_lst = np.array(postition[:,self.num_partitions:])
+        self.system_manager.init_env()
+        reward = []
+        for t in range(self.num_timeslots):
+            self.system_manager.set_env(deployed_server=x_lst[t], execution_order=y_lst[t])
+            reward.append(self.system_manager.get_reward())
+            self.system_manager.after_timeslot(deployed_server=x_lst[t], execution_order=y_lst[t], timeslot=t)
+        return reward
+
+
 class Genetic(PSOGA):
     def __init__(self, dataset, num_solutions, mutation_ratio=0.5, cross_over_ratio=0.5):
         self.num_solutions = num_solutions
@@ -278,7 +525,10 @@ class Genetic(PSOGA):
         return np.random.randint(low=self.num_servers-2, high=self.num_servers-1, size=(self.num_solutions, self.num_timeslots, self.num_partitions))
 
     def run_algo(self, loop, verbose=True, local_search=True):
-        ev_lst = np.zeros(loop, dtype=np.float_)
+        start = time.time()
+        max_reward = 0
+        not_changed_loop = 0
+
         p_t = self.generate_random_solutions()
         p_t = self.reparation(p_t)
 
@@ -287,7 +537,6 @@ class Genetic(PSOGA):
             p_t = self.local_search(p_t, local_prob=0.2)
 
         for i in range(loop):
-            start = time.time()
             q_t = self.selection(p_t, p_known)
 
             q_t = self.crossover(q_t, self.cross_over_ratio)
@@ -298,12 +547,20 @@ class Genetic(PSOGA):
                 q_t = self.local_search(q_t, local_prob=0.2)
             p_known = np.copy(q_t)
             p_t, v = self.fitness_selection(p_t, q_t)
-            ev_lst[i] = v
+
+            if max_reward < v:
+                max_reward = v
+                not_changed_loop = 0
+            elif not_changed_loop > 100:
+                print("\033[31mEarly exit loop {}: {:.5f} sec\033[0m".format(i, time.time() - start))
+                return np.array([self.get_uncoarsened_x(p_t[0,t]) for t in range(self.num_timeslots)]), np.array([self.scheduling_lst for t in range(self.num_timeslots)])
+            else:
+                not_changed_loop += 1
 
             # test
             end = time.time()
             if verbose and i % verbose == 0:
-                print("---------- #{} loop ----------".format(i))
+                print("---------- Genetic #{} loop ----------".format(i))
                 self.system_manager.init_env()
                 total_time = []
                 total_energy = []
@@ -322,7 +579,8 @@ class Genetic(PSOGA):
                 print("mean t: {:.5f}".format(sum(total_time) / self.num_timeslots))
                 print("mean e: {:.5f}".format(sum(total_energy) / self.num_timeslots))
                 print("mean r: {:.5f}".format(sum(total_reward) / self.num_timeslots))
-                print("took: {:.5f} sec".format(end - start))
+                print("avg took: {:.5f} sec".format((end - start) / (i + 1)))
+                print("total took: {:.5f} sec".format(end - start))
         return np.array([self.get_uncoarsened_x(p_t[0,t]) for t in range(self.num_timeslots)]), np.array([self.scheduling_lst for t in range(self.num_timeslots)])
 
     @staticmethod
@@ -351,7 +609,7 @@ class Genetic(PSOGA):
 
     def fitness_selection(self, *args):
         union, max_len = self.union(*args)
-        ev_lst = np.reciprocal(np.sum(np.reciprocal(self.evaluation(union)), axis=1))
+        ev_lst = np.sum(self.evaluation(union), axis=1)
         ev_lst = list(map(lambda x: (x[0], x[1]), enumerate(ev_lst)))
         ev_lst.sort(key=lambda x: x[1], reverse=True)
         sorted_idx = list(map(lambda x: x[0], ev_lst))
@@ -379,6 +637,8 @@ class Genetic(PSOGA):
         crossover_idx = np.random.rand(self.num_solutions)
         crossover_idx = crossover_idx < crossover_rate
         crossover_idx = np.where(crossover_idx)[0]
+        if len(crossover_idx) == 0:
+            crossover_idx = np.array([np.random.randint(low=0, high=self.num_solutions)])
         np.random.shuffle(crossover_idx)
         if len(crossover_idx) - math.floor(crossover_idx.size / 2) * 2:
             crossover_idx = crossover_idx[:-1]
@@ -401,6 +661,8 @@ class Genetic(PSOGA):
         mutation_idx = np.random.rand(self.num_solutions)
         mutation_idx = mutation_idx < mutation_ratio
         mutation_idx = np.where(mutation_idx)[0]
+        if len(mutation_idx) == 0:
+            mutation_idx = np.array([np.random.randint(low=0, high=self.num_solutions)])
         
         working_queue = [action[i] for i in mutation_idx]
         with mp.Pool(processes=30) as pool:
@@ -426,7 +688,7 @@ class HEFT:
         self.system_manager.init_env()
         for t in range(self.num_timeslots):
             Tr = Tf = None
-            for _, top_rank in enumerate(y[t]):
+            for top_rank in y[t]:
                 # initialize the earliest finish time of the task
                 earliest_finish_time = np.inf
                 # for all available server, find earliest finish time server
@@ -448,12 +710,60 @@ class HEFT:
             self.system_manager.after_timeslot(deployed_server=x[t], execution_order=y[t], timeslot=t)
         return np.array(x, dtype=np.int32), np.array(y, dtype=np.int32)
 
+    def run_algo_layer(self, dataset):
+        coarsened_graph = np.zeros_like(dataset.coarsened_graph)
+        for idx, l in enumerate(dataset.service_info[0]['layers']):
+            for p in dataset.system_manager.service_set.partitions:
+                if l['layer_name'] == p.original_layer_name:
+                    coarsened_graph[p.id] = idx
+        
+        x = np.full(shape=(self.num_timeslots, self.num_partitions), fill_value=self.system_manager.cloud_id, dtype=np.int32)
+        y = np.array([np.array(sorted(zip(self.system_manager.rank_u, np.arange(self.num_partitions)), reverse=True), dtype=np.int32)[:,1] for _ in range(self.num_timeslots)])
 
-def result(x_lst, y_lst, took, algorithm_name):
+        layer_graph = np.unique(coarsened_graph)
+        num_layers = len(layer_graph)
+        layer_x = np.full(shape=(self.num_timeslots, num_layers), fill_value=self.system_manager.cloud_id, dtype=np.int32)
+        layer_y = np.array([np.zeros_like(layer_graph) for _ in range(self.num_timeslots)])
+        for t in range(self.num_timeslots):
+            rank_u = np.zeros(num_layers)
+            for k in layer_graph:
+                rank_u[k] = max(self.system_manager.rank_u[np.where(coarsened_graph == k)])
+            layer_y[t] = np.array(sorted(zip(rank_u, layer_graph), reverse=True), dtype=np.int32)[:,1]
+
+        server_lst = list(self.system_manager.local.keys()) + list(self.system_manager.edge.keys())
+
+        self.system_manager.init_env()
+        for t in range(self.num_timeslots):
+            for top_rank in layer_y[t]:
+                # initialize the earliest finish time of the task
+                earliest_finish_time = np.inf
+                # for all available server, find earliest finish time server
+                for s_id in server_lst:
+                    temp_x = layer_x[t,top_rank]
+                    layer_x[t,top_rank] = s_id
+                    x[t,np.where(coarsened_graph == top_rank)] = s_id
+                    if self.system_manager.constraint_chk(x[t], y[t], s_id):
+                        self.system_manager.set_env(deployed_server=x[t], execution_order=y[t])
+                        self.system_manager.total_time_dp()
+                        finish_time = max(self.system_manager.service_set.services[0].finish_time[np.where(coarsened_graph == top_rank)])
+                        if finish_time < earliest_finish_time:
+                            earliest_finish_time = finish_time
+                        else:
+                            layer_x[t,top_rank] = temp_x
+                            x[t,np.where(coarsened_graph == top_rank)] = temp_x
+                    else:
+                        layer_x[t,top_rank] = temp_x
+                        x[t,np.where(coarsened_graph == top_rank)] = temp_x
+            
+            self.system_manager.after_timeslot(deployed_server=x[t], execution_order=y[t], timeslot=t)
+        return np.array(x, dtype=np.int32), np.array(y, dtype=np.int32)
+
+
+def result(dataset, x_lst, y_lst, took, algorithm_name):
     total_time = []
     total_energy = []
     total_reward = []
-    print("---------- " + algorithm_name + " ----------")
+    print("\033[95m---------- " + algorithm_name + " Test! ----------\033[96m")
     dataset.system_manager.init_env()
     for t in range(dataset.num_timeslots):
         x = np.array(x_lst[t])
@@ -472,7 +782,7 @@ def result(x_lst, y_lst, took, algorithm_name):
     print("mean e: {:.5f}".format(sum(total_energy) / dataset.num_timeslots))
     print("mean r: {:.5f}".format(sum(total_reward) / dataset.num_timeslots))
     print("took: {:.5f} sec".format(took))
-    print("---------- Greedy Algorithm ----------\n")
+    print("\033[95m---------- " + algorithm_name + " Done! ----------\033[0m\n")
     return total_time, total_energy, total_reward
 
 
@@ -482,98 +792,187 @@ if __name__=="__main__":
     print('recursion limit', sys.getrecursionlimit())
     sys.setrecursionlimit(10000)
 
-    dataset = DAGDataSet(num_timeslots=1)
+    test_dataset = DAGDataSet(num_timeslots=1, num_partitions=[50, 8, 50, 10], apply_partition=False)
+
+    layer_greedy = HEFT(dataset=test_dataset)
+    layer_psoga = PSOGA_XY(dataset=test_dataset, num_particles=100, w_max=0.2, w_min=0.05, c1=0.2, c2=0.1)
+
+    start = time.time()
+    x_lst = np.full(shape=(test_dataset.num_timeslots, test_dataset.num_partitions), fill_value=list(test_dataset.system_manager.edge.keys())[0], dtype=np.int32)
+    y_lst = np.array([np.array(sorted(zip(test_dataset.system_manager.rank_u, np.arange(test_dataset.num_partitions)), reverse=True), dtype=np.int32)[:,1] for _ in range(test_dataset.num_timeslots)])
+    edge_result = result(test_dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Test Edge Only")
+
+    start = time.time()
+    x_lst, y_lst = layer_greedy.run_algo()
+    heft_result = result(test_dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Layer-based HEFT Algorithm")
+
+    input("wait")
+
+    test_dataset.system_manager.set_env(deployed_server=x_lst[0], execution_order=y_lst[0])
+    delay = test_dataset.system_manager.total_time_dp()
+    for svc in test_dataset.system_manager.service_set.services:
+        svc.deadline = delay[svc.id] * 0.9
+
+    start = time.time()
+    x_lst, y_lst = layer_psoga.run_algo(loop=1000, verbose=100, local_search=True)
+    psoga_result = result(test_dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="PSO-GA Algorithm")
+
+    # start = time.time()
+    # x_lst, y_lst = layer_genetic.run_algo(loop=1000, verbose=100, local_search=False)
+    # genetic_result = result(test_dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Genetic Algorithm")
+
+
+
+    dataset = DAGDataSet(num_timeslots=1, apply_partition=True, net_manager=test_dataset.system_manager.net_manager, svc_arrival=test_dataset.system_manager.service_arrival)
+    dataset.system_manager.scheduling_policy = 'FCFS'
 
     greedy = HEFT(dataset=dataset)
     psoga = PSOGA(dataset=dataset, num_particles=100, w_max=0.2, w_min=0.05, c1=0.2, c2=0.1)
     genetic = Genetic(dataset=dataset, num_solutions=100, mutation_ratio=0.1, cross_over_ratio=0.1)
 
     start = time.time()
+    x_lst = np.full(shape=(dataset.num_timeslots, dataset.num_partitions), fill_value=list(dataset.system_manager.edge.keys())[0], dtype=np.int32)
+    y_lst = np.array([np.array(sorted(zip(dataset.system_manager.rank_u, np.arange(dataset.num_partitions)), reverse=True), dtype=np.int32)[:,1] for _ in range(dataset.num_timeslots)])
+    edge_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Edge Only")
+
+    start = time.time()
+    x_lst, y_lst = greedy.run_algo_layer(dataset)
+    heft_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Layer-based(Partitioned) HEFT Algorithm")
+
+    start = time.time()
     x_lst, y_lst = greedy.run_algo()
-    heft_result = result(x_lst, y_lst, took=time.time()-start, algorithm_name="Greedy Algorithm")
+    heft_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Partition-based HEFT Algorithm")
 
     dataset.system_manager.set_env(deployed_server=x_lst[0], execution_order=y_lst[0])
+    delay = dataset.system_manager.total_time_dp()
     for svc in dataset.system_manager.service_set.services:
-        svc.deadline = np.mean(dataset.system_manager.total_time_dp())
+        svc.deadline = delay[svc.id]
 
     start = time.time()
-    x_lst, y_lst = psoga.run_algo(loop=500, verbose=1, local_search=True)
-    psoga_result = result(x_lst, y_lst, took=time.time()-start, algorithm_name="PSO-GA Algorithm")
-
-    start = time.time()
-    x_lst, y_lst = genetic.run_algo(loop=500, verbose=1, local_search=True)
-    genetic_result = result(x_lst, y_lst, took=time.time()-start, algorithm_name="Genetic Algorithm")
-
-
-
-    # coedge = True
-    # if coedge:
-    #     import config
-    #     coedge_partition = dict()
-    #     for i in range(7):
-    #         coedge_partition[i] = []
-    #     for l in config.service_info[0]['layers']:
-    #         if l['layer_name'] == 'conv1':
-    #             for i in range(6):
-    #                 start = math.floor(math.floor(l['output_height'] / 4) / 6 * i)
-    #                 end = math.floor(math.floor(l['output_height'] / 4) / 6 * (i + 1))
-    #                 for j in range(start, end):
-    #                     coedge_partition[i].append(l['layer_name']+'_'+str(j))
-    #         elif l['layer_name'] == 'maxpool1' or l['layer_name'] == 'conv2' or l['layer_name'] == 'conv3':
-    #             for i in range(6):
-    #                 start = math.floor(math.floor(l['output_height'] / 2) / 6 * i)
-    #                 end = math.floor(math.floor(l['output_height'] / 2) / 6 * (i + 1))
-    #                 for j in range(start, end):
-    #                     coedge_partition[i].append(l['layer_name']+'_'+str(j))
-    #         elif l['layer_type'] == 'cnn' or l['layer_type'] == 'maxpool':
-    #             for i in range(6):
-    #                 start = math.floor(l['output_height'] / 6 * i)
-    #                 end = math.floor(l['output_height'] / 6 * (i + 1))
-    #                 for j in range(start, end):
-    #                     coedge_partition[i].append(l['layer_name']+'_'+str(j))
-    #         elif l['layer_type'] == 'fc':
-    #             minimum_unit = 768
-    #             start = 0
-    #             end = math.floor(l['input_height'] * l['input_width'] * l['input_channel'] / 768)
-    #             for j in range(start, end):
-    #                 coedge_partition[6].append(l['layer_name']+'_'+str(j))
-
-    #     for p_id in range(dataset.num_partitions):
-    #         for i in range(7):
-    #             if dataset.system_manager.service_set.partitions[p_id].layer_name in coedge_partition[i]:
-    #                 dataset.coarsened_graph[p_id] = i
-
-    # coedge_psoga = PSOGA(dataset=dataset, num_particles=100, w_max=0.2, w_min=0.05, c1=0.2, c2=0.1)
-    # coedge_genetic = Genetic(dataset=dataset, num_solutions=100, mutation_ratio=0.1, cross_over_ratio=0.1)
+    x_lst, y_lst = psoga.run_algo(loop=1000, verbose=100, local_search=False)
+    psoga_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="PSO-GA Algorithm")
 
     # start = time.time()
-    # x_lst, y_lst = coedge_psoga.run_algo(loop=100, verbose=100, local_search=False)
-    # coedge_psoga_result = result(x_lst, y_lst, took=time.time()-start, algorithm_name="CoEdge PSO-GA Algorithm")
+    # x_lst, y_lst = genetic.run_algo(loop=1000, verbose=100, local_search=False)
+    # genetic_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Genetic Algorithm")
+
+
+
+    coedge = True
+    if coedge:
+        coedge_partition = dict()
+        if dataset.service_info[0]['model_name'] == 'GoogLeNet':
+            for i in range(7):
+                coedge_partition[i] = []
+            for l in dataset.service_info[0]['layers']:
+                if l['layer_name'] == 'conv1':
+                    for i in range(6):
+                        start = math.floor(math.floor(l['output_height'] / 4) / 6 * i)
+                        end = math.floor(math.floor(l['output_height'] / 4) / 6 * (i + 1))
+                        for j in range(start, end):
+                            coedge_partition[i].append(l['layer_name']+'_'+str(j))
+                elif l['layer_name'] == 'maxpool1' or l['layer_name'] == 'conv2' or l['layer_name'] == 'conv3':
+                    for i in range(6):
+                        start = math.floor(math.floor(l['output_height'] / 2) / 6 * i)
+                        end = math.floor(math.floor(l['output_height'] / 2) / 6 * (i + 1))
+                        for j in range(start, end):
+                            coedge_partition[i].append(l['layer_name']+'_'+str(j))
+                elif l['layer_type'] == 'cnn' or l['layer_type'] == 'maxpool':
+                    for i in range(6):
+                        start = math.floor(l['output_height'] / 6 * i)
+                        end = math.floor(l['output_height'] / 6 * (i + 1))
+                        for j in range(start, end):
+                            coedge_partition[i].append(l['layer_name']+'_'+str(j))
+                elif l['layer_type'] == 'fc':
+                    minimum_unit = 768
+                    start = 0
+                    end = math.floor(l['input_height'] * l['input_width'] * l['input_channel'] / minimum_unit)
+                    for j in range(start, end):
+                        coedge_partition[6].append(l['layer_name']+'_'+str(j))
+
+            for p_id in range(dataset.num_partitions):
+                for i in range(7):
+                    if dataset.system_manager.service_set.partitions[p_id].layer_name in coedge_partition[i]:
+                        dataset.coarsened_graph[p_id] = i
+        elif dataset.service_info[0]['model_name'] == 'AlexNet':
+            for i in range(7):
+                coedge_partition[i] = []
+            for l in dataset.service_info[0]['layers']:
+                if l['layer_type'] == 'cnn' or l['layer_type'] == 'maxpool':
+                    for i in range(6):
+                        start = math.floor(l['output_height'] / 6 * i)
+                        end = math.floor(l['output_height'] / 6 * (i + 1))
+                        for j in range(start, end):
+                            coedge_partition[i].append(l['layer_name']+'_'+str(j))
+                elif l['layer_type'] == 'fc':
+                    minimum_unit = 1536
+                    start = 0
+                    end = math.floor(l['input_height'] * l['input_width'] * l['input_channel'] / minimum_unit)
+                    for j in range(start, end):
+                        coedge_partition[6].append(l['layer_name']+'_'+str(j))
+
+            for p_id in range(dataset.num_partitions):
+                for i in range(7):
+                    if dataset.system_manager.service_set.partitions[p_id].layer_name in coedge_partition[i]:
+                        dataset.coarsened_graph[p_id] = i
+        elif dataset.service_info[0]['model_name'] == 'ResNet-50':
+            for i in range(8):
+                coedge_partition[i] = []
+            for l in dataset.service_info[0]['layers']:
+                if l['layer_name'] == 'conv1':
+                    for i in range(7):
+                        start = math.floor(math.floor(l['output_height'] / 4) / 7 * i)
+                        end = math.floor(math.floor(l['output_height'] / 4) / 7 * (i + 1))
+                        for j in range(start, end):
+                            coedge_partition[i].append(l['layer_name']+'_'+str(j))
+                elif l['layer_type'] == 'cnn' or l['layer_type'] == 'maxpool' or l['layer_type'] == 'avgpool':
+                    for i in range(7):
+                        start = math.floor(l['output_height'] / 7 * i)
+                        end = math.floor(l['output_height'] / 7 * (i + 1))
+                        for j in range(start, end):
+                            coedge_partition[i].append(l['layer_name']+'_'+str(j))
+                elif l['layer_type'] == 'fc':
+                    minimum_unit = 2048
+                    start = 0
+                    end = math.floor(l['input_height'] * l['input_width'] * l['input_channel'] / minimum_unit)
+                    for j in range(start, end):
+                        coedge_partition[7].append(l['layer_name']+'_'+str(j))
+
+            for p_id in range(dataset.num_partitions):
+                for i in range(8):
+                    if dataset.system_manager.service_set.partitions[p_id].layer_name in coedge_partition[i]:
+                        dataset.coarsened_graph[p_id] = i
+
+        coedge_psoga = PSOGA(dataset=dataset, num_particles=100, w_max=0.2, w_min=0.05, c1=0.2, c2=0.1)
+        coedge_genetic = Genetic(dataset=dataset, num_solutions=100, mutation_ratio=0.1, cross_over_ratio=0.1)
+
+        start = time.time()
+        x_lst, y_lst = coedge_psoga.run_algo(loop=1000, verbose=100, local_search=False)
+        coedge_psoga_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="CoEdge PSO-GA Algorithm")
+
+        # start = time.time()
+        # x_lst, y_lst = coedge_genetic.run_algo(loop=1000, verbose=100, local_search=False)
+        # coedge_genetic_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="CoEdge Genetic Algorithm")
+
+
+
+    energy_efficient = True
+    if energy_efficient:
+        for idx, l in enumerate(dataset.service_info[0]['layers']):
+            for p in dataset.system_manager.service_set.partitions:
+                if l['layer_name'] == p.original_layer_name:
+                    dataset.coarsened_graph[p.id] = idx
+
+        energy_efficient_psoga = PSOGA(dataset=dataset, num_particles=100, w_max=0.2, w_min=0.05, c1=0.2, c2=0.1)
+        energy_efficient_genetic = Genetic(dataset=dataset, num_solutions=100, mutation_ratio=0.1, cross_over_ratio=0.1)
+
+        start = time.time()
+        x_lst, y_lst = energy_efficient_psoga.run_algo(loop=1000, verbose=100, local_search=False)
+        energy_efficient_psoga_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Energy Efficient PSO-GA Algorithm")
 
     # start = time.time()
-    # x_lst, y_lst = coedge_genetic.run_algo(loop=100, verbose=100, local_search=False)
-    # coedge_genetic_result = result(x_lst, y_lst, took=time.time()-start, algorithm_name="CoEdge Genetic Algorithm")
-
-
-
-    # energy_efficient = True
-    # if energy_efficient:
-    #     import config
-    #     for idx, l in enumerate(config.service_info[0]['layers']):
-    #         for p in dataset.system_manager.service_set.partitions:
-    #             if l['layer_name'] == p.original_layer_name:
-    #                 dataset.coarsened_graph[p.id] = idx
-
-    # energy_efficient_psoga = PSOGA(dataset=dataset, num_particles=100, w_max=0.2, w_min=0.05, c1=0.2, c2=0.1)
-    # energy_efficient_genetic = Genetic(dataset=dataset, num_solutions=100, mutation_ratio=0.1, cross_over_ratio=0.1)
-
-    # start = time.time()
-    # x_lst, y_lst = energy_efficient_psoga.run_algo(loop=100, verbose=100, local_search=False)
-    # energy_efficient_psoga_result = result(x_lst, y_lst, took=time.time()-start, algorithm_name="Energy Efficient PSO-GA Algorithm")
-
-    # start = time.time()
-    # x_lst, y_lst = energy_efficient_genetic.run_algo(loop=100, verbose=100, local_search=False)
-    # energy_efficient_genetic_result = result(x_lst, y_lst, took=time.time()-start, algorithm_name="Energy Efficient Genetic Algorithm")
+    # x_lst, y_lst = energy_efficient_genetic.run_algo(loop=1000, verbose=100, local_search=False)
+    # energy_efficient_genetic_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Energy Efficient Genetic Algorithm")
 
 
     import matplotlib.pyplot as plt

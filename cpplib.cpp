@@ -141,6 +141,76 @@ double get_task_finish_time(int *deployed_server, int *execution_order, double *
     return finish_time[c_id];
 }
 
+// PyObject* deployed_server_reparation(PyObject* self, PyObject* args) {
+//     Py_Initialize();
+//     import_array();
+
+//     // initialize
+//     int num_uncoarsened_partitons, num_partitions;
+//     PyObject *py_deployed_server, *py_partition_memory, *py_server_memory, *py_server_energy, *py_node_weight, *py_edge_weight, *py_successors;
+//     if (!PyArg_ParseTuple(args, "iiOOOOOOO", &num_uncoarsened_partitons, &num_partitions, &py_deployed_server, &py_partition_memory, &py_server_memory, &py_server_energy, &py_node_weight, &py_edge_weight, &py_successors)) {
+//         std::cout << "PyArg_ParseTuple Error" << std::endl;
+//         return NULL;
+//     }
+//     int *uncoarsened_graph = new int[num_uncoarsened_partitons]();
+//     int *deployed_server = (int*)PyArray_DATA(py_deployed_server);
+//     double *partition_memory = (int*)PyArray_DATA(py_partition_memory);
+//     double *server_memory = (double*)PyArray_DATA(py_server_memory);
+//     double *server_energy = (double*)PyArray_DATA(py_server_energy);
+//     double *node_weight = (double*)PyArray_DATA(py_node_weight);
+//     std::map<std::pair<int, int>, double> edge_weight;
+//     if (!dictToMap(py_edge_weight, edge_weight)) {
+//         std::cout << "dictToMap Error" << std::endl;
+//         return NULL;
+//     }
+//     std::map<int, std::vector<int>> successors;
+//     if (!dictToMap(py_successors, successors)) {
+//         std::cout << "listToVector Error" << std::endl;
+//         return NULL;
+//     }
+//     Py_DECREF(&py_uncoarsened_graph);
+//     Py_DECREF(&py_deployed_server);
+//     Py_DECREF(&py_partition_memory);
+//     Py_DECREF(&py_server_memory);
+//     Py_DECREF(&py_server_energy);
+//     Py_DECREF(&py_node_weight);
+//     Py_DECREF(&py_edge_weight);
+//     Py_DECREF(&py_successors);
+//     double *repaired_deployed_server = new double[num_partitions]();
+//     double *finish_time = new double[num_partitions]();
+
+//     // completion time calculation
+//     server_lst = list(self.system_manager.local.keys()) + list(self.system_manager.edge.keys())
+//     cloud_lst = list(self.system_manager.cloud.keys())
+//     while False in self.system_manager.constraint_chk(deployed_server=self.get_uncoarsened_x(deployed_server), execution_order=self.scheduling_lst):
+//         # 각 서버에 대해서,
+//         for s_id in range(self.num_servers-1):
+//             deployed_container_lst = list(np.where(deployed_server == s_id)[0])
+//             random.shuffle(deployed_container_lst)
+//             # 서버가 넘치는 경우,
+//             while self.system_manager.constraint_chk(deployed_server=self.get_uncoarsened_x(deployed_server), execution_order=self.scheduling_lst, s_id=s_id) == False:
+//                 # 해당 서버에 deployed되어있는 partition 중 하나를 자원이 충분한 랜덤 서버로 보냄.
+//                 c_id = deployed_container_lst.pop() # random partition 하나를 골라서
+//                 random.shuffle(server_lst)
+//                 for another_s_id in server_lst + cloud_lst: # 아무 서버에다가 (클라우드는 예외처리용임. 알고리즘에서는 넘치는걸 가정하지 않음.)
+//                     if s_id != another_s_id and self.system_manager.server[another_s_id].cur_energy > 0 and self.system_manager.constraint_chk(deployed_server=self.get_uncoarsened_x(deployed_server), execution_order=self.scheduling_lst, s_id=another_s_id):
+//                         deployed_server[c_id] = another_s_id # 한번 넣어보고
+//                         if self.system_manager.constraint_chk(deployed_server=self.get_uncoarsened_x(deployed_server), execution_order=self.scheduling_lst, s_id=another_s_id): # 자원 넘치는지 확인.
+//                             break
+//                         else:
+//                             deployed_server[c_id] = s_id # 자원 넘치면 롤백
+
+//     npy_intp m = num_partitions;
+//     return PyArray_SimpleNewFromData(1, &m, NPY_DOUBLE, (void *)finish_time);
+// }
+
+// int *get_uncoarsened_x(int *uncoarsened_graph, int *graph) {
+//     uncoarsened_x = np.zeros(self.num_uncoarsened_partitons)
+//     for i, x_i in enumerate(x):
+//         uncoarsened_x[np.where(self.uncoarsened_graph==self.graph[i])] = x_i
+//     return uncoarsened_x
+// }
+
 bool dictToMap(PyObject *srcDict, std::map<std::pair<int, int>, double> &destMap) {
     destMap.clear();
     if(PyDict_Check(srcDict)) {

@@ -74,7 +74,6 @@ class SystemManager():
         self.net_manager = None
         self.service_arrival = None
         self.partition_arrival = None
-        self.max_arrival = None
 
         self.num_servers = None
         self.num_services = None
@@ -82,7 +81,10 @@ class SystemManager():
         self.cloud_id = None
         self.timeslot = 0
         self.rank_u = None
+        self.rank_ready = None
         self.rank_oct = None
+
+        self.scheduling_policy = None
 
     def constraint_chk(self, deployed_server, execution_order, s_id=None):
         self.set_env(deployed_server=deployed_server, execution_order=execution_order)
@@ -91,10 +93,9 @@ class SystemManager():
         else:
             return [s.constraint_chk() for s in self.server.values()]
 
-    def set_service_set(self, service_set, arrival, max_arrival):
+    def set_service_set(self, service_set, arrival):
         self.service_set = service_set
         self.service_arrival = arrival
-        self.max_arrival = max_arrival
         self.partition_arrival = np.zeros(len(self.service_set.partitions), dtype=np.float_)
         for svc in service_set.services:
             for partition in svc.partitions:
@@ -150,6 +151,23 @@ class SystemManager():
             s_id = self.deployed_server[partition.id]
             partition.update(deployed_server=self.server[s_id])
             self.server[s_id].deploy_one(partition)
+
+        # execution_order calculation, FCFS
+        if self.scheduling_policy == 'FCFS':
+            self.rank_ready = np.zeros(self.num_partitions)
+            for svc in self.service_set.services:
+                for partition in reversed(svc.partitions):
+                    self.calc_rank_ready(partition)
+            execution_order = np.array(sorted(zip(self.rank_ready, np.arange(self.num_partitions)), reverse=False), dtype=np.int32)[:,1]
+
+        # execution_order calculation, EFT
+        if self.scheduling_policy == 'EST':
+            self.rank_u = np.zeros(self.num_partitions)
+            for svc in self.service_set.services:
+                for partition in svc.partitions:
+                    self.calc_rank_u(partition)
+            execution_order = np.array(sorted(zip(self.rank_u, np.arange(self.num_partitions)), reverse=True), dtype=np.int32)[:,1]
+        
         self.execution_order = np.array(execution_order, dtype=np.int32)
         for order, p_id in enumerate(self.execution_order):
             self.service_set.partitions[p_id].update(execution_order=order)
@@ -173,7 +191,7 @@ class SystemManager():
             energy_factor.append(E_d)
         energy_factor = 1 / np.sum(energy_factor)
 
-        reward = utility_factor + energy_factor / 100
+        reward = utility_factor + energy_factor / 1000
         #print("energy_factor", energy_factor)
         #print("utility_factor", utility_factor)
         return reward
@@ -206,15 +224,15 @@ class SystemManager():
             communication_cost.append(c_ij + self.rank_u[succ.id])
         self.rank_u[partition.id] = w_i + max(communication_cost)
 
-    def calc_rank_real(self, partition):    # rank_real for heft
-        w_i = partition.workload_size / self.average_computing_power
-        communication_cost = [0,]
-        for succ in partition.successors:
-            c_ij = partition.get_output_data_size(succ) / self.average_bandwidth
-            if self.rank_u[succ.id] == 0:
-                self.calc_rank_u(succ)
-            communication_cost.append(c_ij + self.rank_u[succ.id])
-        self.rank_u[partition.id] = w_i + max(communication_cost)
+    def calc_rank_ready(self, partition):    # rank_ready for heft
+        pred_rank = [0,]
+        for pred in partition.predecessors:
+            w_i = pred.get_computation_time()
+            c_ij = self.net_manager.communication(partition.get_input_data_size(pred), pred.deployed_server.id, partition.deployed_server.id)
+            if self.rank_ready[pred.id] == 0:
+                self.calc_rank_ready(pred)
+            pred_rank.append(w_i + c_ij + self.rank_ready[pred.id])
+        self.rank_ready[partition.id] = max(pred_rank)
 
     def calc_rank_oct(self, partition):
         pass
