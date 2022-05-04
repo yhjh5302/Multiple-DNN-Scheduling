@@ -9,7 +9,7 @@ import time
 
 
 class PSOGA:
-    def __init__(self, dataset, num_particles, w_max=1.0, w_min=0.5, c1=0.5, c2=0.5):
+    def __init__(self, dataset, num_particles, w_max=1.0, w_min=0.5, c1_s=0.5, c1_e=0.5, c2_s=0.5, c2_e=0.5):
         self.num_particles = num_particles
         self.system_manager = dataset.system_manager
         self.num_servers = dataset.num_servers
@@ -25,8 +25,10 @@ class PSOGA:
 
         self.w_max = w_max            # constant inertia max weight (how much to weigh the previous velocity)
         self.w_min = w_min            # constant inertia min weight (how much to weigh the previous velocity)
-        self.c1 = c1                  # cognative constant
-        self.c2 = c2                  # social constant
+        self.c1_s = c1_s                  # cognative constant (start)
+        self.c1_e = c1_e                  # cognative constant (end)
+        self.c2_s = c2_s                  # social constant (start)
+        self.c2_e = c2_e                  # social constant (end)
     
     def get_uncoarsened_x(self, x):
         uncoarsened_x = np.zeros(self.num_uncoarsened_partitons)
@@ -49,6 +51,18 @@ class PSOGA:
         return temp
 
     def generate_random_solutions(self):
+        # random_solutions = np.zeros((self.num_particles, self.num_timeslots, self.num_partitions))
+        # start = end = 0
+        # for i in range(self.num_servers):
+        #     if i == self.num_servers - 1:
+        #         start = end
+        #         end = self.num_particles
+        #         random_solutions[start:end,:,:] = np.random.randint(low=0, high=self.num_servers-1, size=(end-start, self.num_timeslots, self.num_partitions))
+        #     else:
+        #         start = end
+        #         end = start + 5
+        #         random_solutions[start:end,:,:] = np.full(shape=(end-start, self.num_timeslots, self.num_partitions), fill_value=i)
+        # return random_solutions
         return np.random.randint(low=self.num_servers-2, high=self.num_servers-1, size=(self.num_particles, self.num_timeslots, self.num_partitions))
     
     def local_search_multiprocessing(self, action):
@@ -56,7 +70,7 @@ class PSOGA:
         for t in range(self.num_timeslots):
             self.deployed_server_reparation(action[t])
 
-            for j in np.random.choice(self.num_partitions, size=1, replace=False): # for jth layer
+            for j in np.random.choice(self.num_partitions, size=2, replace=False): # for jth layer
                 # local search x: deployed_server
                 self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(action[t]), execution_order=self.scheduling_lst)
                 max_reward = self.system_manager.get_reward()
@@ -84,9 +98,6 @@ class PSOGA:
             local_idx = np.array([np.random.randint(low=0, high=action.shape[0])])
         np.random.shuffle(local_idx)
 
-        temp = [self.local_search_multiprocessing(action[i]) for i in local_idx]
-        action[local_idx] = np.array(temp)
-        return action
         working_queue = [action[i] for i in local_idx]
         with mp.Pool(processes=30) as pool:
             temp = list(pool.map(self.local_search_multiprocessing, working_queue))
@@ -106,8 +117,8 @@ class PSOGA:
 
         for i in range(loop):
             v_t = self.mutation(x_t, g_t)
-            c_t = self.crossover(v_t, p_t, crossover_rate=self.c1)
-            x_t = self.crossover(c_t, g_t, crossover_rate=self.c2, is_global=True)
+            c_t = self.crossover(v_t, p_t, crossover_rate=(self.c1_e-self.c1_s) * (i / loop) + self.c1_s)
+            x_t = self.crossover(c_t, g_t, crossover_rate=(self.c2_e-self.c2_s) * (i / loop) + self.c2_s, is_global=True)
             x_t = self.reparation(x_t)
             
             if local_search:
@@ -139,7 +150,7 @@ class PSOGA:
                     #print("#timeslot {} e: {}".format(t, [s.cur_energy - s.energy_consumption() for s in self.system_manager.server.values()]))
                     #print("#timeslot {} t: {}".format(t, self.system_manager.total_time_dp()))
                     total_time.append(sum(self.system_manager.total_time_dp()))
-                    total_energy.append(sum([s.energy_consumption() for s in self.system_manager.local.values()]))
+                    total_energy.append(sum([s.energy_consumption() for s in list(self.system_manager.local.values()) + list(self.system_manager.edge.values())]))
                     total_reward.append(self.system_manager.get_reward())
                     self.system_manager.after_timeslot(deployed_server=self.get_uncoarsened_x(g_t[t]), execution_order=self.scheduling_lst, timeslot=t)
                 print("mean t: {:.5f}".format(sum(total_time) / self.num_timeslots))
@@ -317,7 +328,7 @@ class PSOGA_XY(PSOGA):
             for j in np.random.choice(self.num_partitions, size=1, replace=False): # for jth layer
                 # local search y: execution order
                 for p_id in range(self.num_partitions):
-                    if p_id == j or p_id in self.system_manager.service_set.partitions[j].total_pred_succ_id:
+                    if p_id == j or self.system_manager.service_set.partitions[j].service.total_predecessors[p_id, j] or self.system_manager.service_set.partitions[j].service.total_predecessors[j, p_id]:
                         continue
                     temp = y_lst[t,j]
                     y_lst[t,j] = y_lst[t,p_id]
@@ -384,7 +395,7 @@ class PSOGA_XY(PSOGA):
                     #print("#timeslot {} e: {}".format(t, [s.cur_energy - s.energy_consumption() for s in self.system_manager.server.values()]))
                     #print("#timeslot {} t: {}".format(t, self.system_manager.total_time_dp()))
                     total_time.append(sum(self.system_manager.total_time_dp()))
-                    total_energy.append(sum([s.energy_consumption() for s in self.system_manager.local.values()]))
+                    total_energy.append(sum([s.energy_consumption() for s in list(self.system_manager.local.values()) + list(self.system_manager.edge.values())]))
                     total_reward.append(self.system_manager.get_reward())
                     self.system_manager.after_timeslot(deployed_server=x, execution_order=y, timeslot=t)
                 print("mean t: {:.5f}".format(sum(total_time) / self.num_timeslots))
@@ -504,7 +515,7 @@ class PSOGA_XY(PSOGA):
 
 
 class Genetic(PSOGA):
-    def __init__(self, dataset, num_solutions, mutation_ratio=0.5, cross_over_ratio=0.5):
+    def __init__(self, dataset, num_solutions, mutation_ratio=0.5, cross_over_ratio=0.7):
         self.num_solutions = num_solutions
         self.system_manager = dataset.system_manager
         self.num_servers = dataset.num_servers
@@ -522,6 +533,18 @@ class Genetic(PSOGA):
         self.cross_over_ratio = cross_over_ratio
 
     def generate_random_solutions(self):
+        # random_solutions = np.zeros((self.num_solutions, self.num_timeslots, self.num_partitions))
+        # start = end = 0
+        # for i in range(self.num_servers):
+        #     if i == self.num_servers - 1:
+        #         start = end
+        #         end = self.num_solutions
+        #         random_solutions[start:end,:,:] = np.random.randint(low=0, high=self.num_servers-1, size=(end-start, self.num_timeslots, self.num_partitions))
+        #     else:
+        #         start = end
+        #         end = start + 5
+        #         random_solutions[start:end,:,:] = np.full(shape=(end-start, self.num_timeslots, self.num_partitions), fill_value=i)
+        # return random_solutions
         return np.random.randint(low=self.num_servers-2, high=self.num_servers-1, size=(self.num_solutions, self.num_timeslots, self.num_partitions))
 
     def run_algo(self, loop, verbose=True, local_search=True):
@@ -573,7 +596,7 @@ class Genetic(PSOGA):
                     #print("#timeslot {} e: {}".format(t, [s.cur_energy - s.energy_consumption() for s in self.system_manager.server.values()]))
                     #print("#timeslot {} t: {}".format(t, self.system_manager.total_time_dp()))
                     total_time.append(sum(self.system_manager.total_time_dp()))
-                    total_energy.append(sum([s.energy_consumption() for s in self.system_manager.local.values()]))
+                    total_energy.append(sum([s.energy_consumption() for s in list(self.system_manager.local.values()) + list(self.system_manager.edge.values())]))
                     total_reward.append(self.system_manager.get_reward())
                     self.system_manager.after_timeslot(deployed_server=self.get_uncoarsened_x(p_t[0,t]), execution_order=self.scheduling_lst, timeslot=t)
                 print("mean t: {:.5f}".format(sum(total_time) / self.num_timeslots))
@@ -637,8 +660,8 @@ class Genetic(PSOGA):
         crossover_idx = np.random.rand(self.num_solutions)
         crossover_idx = crossover_idx < crossover_rate
         crossover_idx = np.where(crossover_idx)[0]
-        if len(crossover_idx) == 0:
-            crossover_idx = np.array([np.random.randint(low=0, high=self.num_solutions)])
+        if len(crossover_idx) < 2:
+            crossover_idx = np.array([np.random.randint(low=0, high=self.num_solutions, size=2)])
         np.random.shuffle(crossover_idx)
         if len(crossover_idx) - math.floor(crossover_idx.size / 2) * 2:
             crossover_idx = crossover_idx[:-1]
@@ -687,7 +710,8 @@ class HEFT:
 
         self.system_manager.init_env()
         for t in range(self.num_timeslots):
-            Tr = Tf = None
+            Tr = np.zeros(self.num_partitions)
+            Tf = np.zeros(self.num_partitions)
             for top_rank in y[t]:
                 # initialize the earliest finish time of the task
                 earliest_finish_time = np.inf
@@ -697,16 +721,15 @@ class HEFT:
                     x[t,top_rank] = s_id
                     if self.system_manager.constraint_chk(x[t], y[t], s_id):
                         self.system_manager.set_env(deployed_server=x[t], execution_order=y[t])
-                        finish_time, temp_Tr, temp_Tf = self.system_manager.get_completion_time(top_rank, Tr, Tf)
+                        finish_time, _, _ = self.system_manager.get_completion_time(top_rank, np.copy(Tr), np.copy(Tf))
                         if finish_time < earliest_finish_time:
                             earliest_finish_time = finish_time
                         else:
                             x[t,top_rank] = temp_x
                     else:
                         x[t,top_rank] = temp_x
-                Tr = temp_Tr
-                Tf = temp_Tf
-            
+                self.system_manager.set_env(deployed_server=x[t], execution_order=y[t])
+                finish_time, Tr, Tf = self.system_manager.get_completion_time(top_rank, np.copy(Tr), np.copy(Tf))
             self.system_manager.after_timeslot(deployed_server=x[t], execution_order=y[t], timeslot=t)
         return np.array(x, dtype=np.int32), np.array(y, dtype=np.int32)
 
@@ -775,7 +798,7 @@ def result(dataset, x_lst, y_lst, took, algorithm_name):
         #print("#timeslot {} e: {}".format(t, [s.cur_energy - s.energy_consumption() for s in dataset.system_manager.server.values()]))
         #print("#timeslot {} t: {}".format(t, dataset.system_manager.total_time_dp()))
         total_time.append(sum(dataset.system_manager.total_time_dp()))
-        total_energy.append(sum([s.energy_consumption() for s in dataset.system_manager.local.values()]))
+        total_energy.append(sum([s.energy_consumption() for s in list(dataset.system_manager.local.values()) + list(dataset.system_manager.edge.values())]))
         total_reward.append(dataset.system_manager.get_reward())
         dataset.system_manager.after_timeslot(deployed_server=x, execution_order=y, timeslot=t)
     print("mean t: {:.5f}".format(sum(total_time) / dataset.num_timeslots))
@@ -792,187 +815,179 @@ if __name__=="__main__":
     print('recursion limit', sys.getrecursionlimit())
     sys.setrecursionlimit(10000)
 
-    test_dataset = DAGDataSet(num_timeslots=1, num_partitions=[50, 8, 50, 10], apply_partition=False)
+    test_dataset = DAGDataSet(num_timeslots=1, num_partitions=[50,50,50,10], apply_partition=False)
 
     layer_greedy = HEFT(dataset=test_dataset)
-    layer_psoga = PSOGA_XY(dataset=test_dataset, num_particles=100, w_max=0.2, w_min=0.05, c1=0.2, c2=0.1)
+    layer_psoga_xy = PSOGA_XY(dataset=test_dataset, num_particles=100, w_max=0.8, w_min=0.2, c1_s=0.8, c1_e=0.2, c2_s=0.4, c2_e=0.8)
+    layer_psoga = PSOGA(dataset=test_dataset, num_particles=100, w_max=0.8, w_min=0.2, c1_s=0.8, c1_e=0.2, c2_s=0.4, c2_e=0.8)
+    layer_genetic = Genetic(dataset=test_dataset, num_solutions=100, mutation_ratio=0.2, cross_over_ratio=0.4)
+
+    start = time.time()
+    x_lst = np.full(shape=(test_dataset.num_timeslots, test_dataset.num_partitions), fill_value=test_dataset.system_manager.net_manager.request_device, dtype=np.int32)
+    y_lst = np.array([np.array(sorted(zip(test_dataset.system_manager.rank_u, np.arange(test_dataset.num_partitions)), reverse=True), dtype=np.int32)[:,1] for _ in range(test_dataset.num_timeslots)])
+    edge_result = result(test_dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Test Local Only")
+    print("get_computation_time", sum([p.get_computation_time() for p in test_dataset.system_manager.service_set.partitions]))
 
     start = time.time()
     x_lst = np.full(shape=(test_dataset.num_timeslots, test_dataset.num_partitions), fill_value=list(test_dataset.system_manager.edge.keys())[0], dtype=np.int32)
     y_lst = np.array([np.array(sorted(zip(test_dataset.system_manager.rank_u, np.arange(test_dataset.num_partitions)), reverse=True), dtype=np.int32)[:,1] for _ in range(test_dataset.num_timeslots)])
     edge_result = result(test_dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Test Edge Only")
+    print("get_computation_time", sum([p.get_computation_time() for p in test_dataset.system_manager.service_set.partitions]))
+
+    # start = time.time()
+    # x_lst, y_lst = layer_greedy.run_algo()
+    # heft_result = result(test_dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Layer-based HEFT Algorithm")
+
+    # test_dataset.system_manager.set_env(deployed_server=x_lst[0], execution_order=y_lst[0])
+    # delay = test_dataset.system_manager.total_time_dp()
+    # for svc in test_dataset.system_manager.service_set.services:
+    #     svc.deadline = delay[svc.id] * 0.5
+
+    # start = time.time()
+    # x_lst, y_lst = layer_psoga_xy.run_algo(loop=500, verbose=100, local_search=False)
+    # psoga_xy_result = result(test_dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="PSO-GA_XY Algorithm")
 
     start = time.time()
-    x_lst, y_lst = layer_greedy.run_algo()
-    heft_result = result(test_dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Layer-based HEFT Algorithm")
-
-    input("wait")
-
-    test_dataset.system_manager.set_env(deployed_server=x_lst[0], execution_order=y_lst[0])
-    delay = test_dataset.system_manager.total_time_dp()
-    for svc in test_dataset.system_manager.service_set.services:
-        svc.deadline = delay[svc.id] * 0.9
-
-    start = time.time()
-    x_lst, y_lst = layer_psoga.run_algo(loop=1000, verbose=100, local_search=True)
+    x_lst, y_lst = layer_psoga.run_algo(loop=500, verbose=100, local_search=False)
     psoga_result = result(test_dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="PSO-GA Algorithm")
 
-    # start = time.time()
-    # x_lst, y_lst = layer_genetic.run_algo(loop=1000, verbose=100, local_search=False)
-    # genetic_result = result(test_dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Genetic Algorithm")
-
-
-
-    dataset = DAGDataSet(num_timeslots=1, apply_partition=True, net_manager=test_dataset.system_manager.net_manager, svc_arrival=test_dataset.system_manager.service_arrival)
-    dataset.system_manager.scheduling_policy = 'FCFS'
-
-    greedy = HEFT(dataset=dataset)
-    psoga = PSOGA(dataset=dataset, num_particles=100, w_max=0.2, w_min=0.05, c1=0.2, c2=0.1)
-    genetic = Genetic(dataset=dataset, num_solutions=100, mutation_ratio=0.1, cross_over_ratio=0.1)
-
     start = time.time()
-    x_lst = np.full(shape=(dataset.num_timeslots, dataset.num_partitions), fill_value=list(dataset.system_manager.edge.keys())[0], dtype=np.int32)
-    y_lst = np.array([np.array(sorted(zip(dataset.system_manager.rank_u, np.arange(dataset.num_partitions)), reverse=True), dtype=np.int32)[:,1] for _ in range(dataset.num_timeslots)])
-    edge_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Edge Only")
+    x_lst, y_lst = layer_genetic.run_algo(loop=500, verbose=100, local_search=False)
+    genetic_result = result(test_dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Genetic Algorithm")
 
-    start = time.time()
-    x_lst, y_lst = greedy.run_algo_layer(dataset)
-    heft_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Layer-based(Partitioned) HEFT Algorithm")
 
-    start = time.time()
-    x_lst, y_lst = greedy.run_algo()
-    heft_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Partition-based HEFT Algorithm")
 
-    dataset.system_manager.set_env(deployed_server=x_lst[0], execution_order=y_lst[0])
-    delay = dataset.system_manager.total_time_dp()
-    for svc in dataset.system_manager.service_set.services:
-        svc.deadline = delay[svc.id]
+    # print("\n========== Our Scheme Start ==========\n")
 
-    start = time.time()
-    x_lst, y_lst = psoga.run_algo(loop=1000, verbose=100, local_search=False)
-    psoga_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="PSO-GA Algorithm")
+    # dataset = DAGDataSet(num_timeslots=1, num_partitions=[50,50,50,10], apply_partition=False, net_manager=test_dataset.system_manager.net_manager, svc_arrival=test_dataset.system_manager.service_arrival)
+    # #dataset.system_manager.scheduling_policy = 'EFT'
+
+    # greedy = HEFT(dataset=dataset)
+    # psoga = PSOGA(dataset=dataset, num_particles=100, w_max=0.8, w_min=0.2, c1_s=0.8, c1_e=0.2, c2_s=0.4, c2_e=0.8)
+    # genetic = Genetic(dataset=dataset, num_solutions=100, mutation_ratio=0.2, cross_over_ratio=0.4)
 
     # start = time.time()
-    # x_lst, y_lst = genetic.run_algo(loop=1000, verbose=100, local_search=False)
-    # genetic_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Genetic Algorithm")
-
-
-
-    coedge = True
-    if coedge:
-        coedge_partition = dict()
-        if dataset.service_info[0]['model_name'] == 'GoogLeNet':
-            for i in range(7):
-                coedge_partition[i] = []
-            for l in dataset.service_info[0]['layers']:
-                if l['layer_name'] == 'conv1':
-                    for i in range(6):
-                        start = math.floor(math.floor(l['output_height'] / 4) / 6 * i)
-                        end = math.floor(math.floor(l['output_height'] / 4) / 6 * (i + 1))
-                        for j in range(start, end):
-                            coedge_partition[i].append(l['layer_name']+'_'+str(j))
-                elif l['layer_name'] == 'maxpool1' or l['layer_name'] == 'conv2' or l['layer_name'] == 'conv3':
-                    for i in range(6):
-                        start = math.floor(math.floor(l['output_height'] / 2) / 6 * i)
-                        end = math.floor(math.floor(l['output_height'] / 2) / 6 * (i + 1))
-                        for j in range(start, end):
-                            coedge_partition[i].append(l['layer_name']+'_'+str(j))
-                elif l['layer_type'] == 'cnn' or l['layer_type'] == 'maxpool':
-                    for i in range(6):
-                        start = math.floor(l['output_height'] / 6 * i)
-                        end = math.floor(l['output_height'] / 6 * (i + 1))
-                        for j in range(start, end):
-                            coedge_partition[i].append(l['layer_name']+'_'+str(j))
-                elif l['layer_type'] == 'fc':
-                    minimum_unit = 768
-                    start = 0
-                    end = math.floor(l['input_height'] * l['input_width'] * l['input_channel'] / minimum_unit)
-                    for j in range(start, end):
-                        coedge_partition[6].append(l['layer_name']+'_'+str(j))
-
-            for p_id in range(dataset.num_partitions):
-                for i in range(7):
-                    if dataset.system_manager.service_set.partitions[p_id].layer_name in coedge_partition[i]:
-                        dataset.coarsened_graph[p_id] = i
-        elif dataset.service_info[0]['model_name'] == 'AlexNet':
-            for i in range(7):
-                coedge_partition[i] = []
-            for l in dataset.service_info[0]['layers']:
-                if l['layer_type'] == 'cnn' or l['layer_type'] == 'maxpool':
-                    for i in range(6):
-                        start = math.floor(l['output_height'] / 6 * i)
-                        end = math.floor(l['output_height'] / 6 * (i + 1))
-                        for j in range(start, end):
-                            coedge_partition[i].append(l['layer_name']+'_'+str(j))
-                elif l['layer_type'] == 'fc':
-                    minimum_unit = 1536
-                    start = 0
-                    end = math.floor(l['input_height'] * l['input_width'] * l['input_channel'] / minimum_unit)
-                    for j in range(start, end):
-                        coedge_partition[6].append(l['layer_name']+'_'+str(j))
-
-            for p_id in range(dataset.num_partitions):
-                for i in range(7):
-                    if dataset.system_manager.service_set.partitions[p_id].layer_name in coedge_partition[i]:
-                        dataset.coarsened_graph[p_id] = i
-        elif dataset.service_info[0]['model_name'] == 'ResNet-50':
-            for i in range(8):
-                coedge_partition[i] = []
-            for l in dataset.service_info[0]['layers']:
-                if l['layer_name'] == 'conv1':
-                    for i in range(7):
-                        start = math.floor(math.floor(l['output_height'] / 4) / 7 * i)
-                        end = math.floor(math.floor(l['output_height'] / 4) / 7 * (i + 1))
-                        for j in range(start, end):
-                            coedge_partition[i].append(l['layer_name']+'_'+str(j))
-                elif l['layer_type'] == 'cnn' or l['layer_type'] == 'maxpool' or l['layer_type'] == 'avgpool':
-                    for i in range(7):
-                        start = math.floor(l['output_height'] / 7 * i)
-                        end = math.floor(l['output_height'] / 7 * (i + 1))
-                        for j in range(start, end):
-                            coedge_partition[i].append(l['layer_name']+'_'+str(j))
-                elif l['layer_type'] == 'fc':
-                    minimum_unit = 2048
-                    start = 0
-                    end = math.floor(l['input_height'] * l['input_width'] * l['input_channel'] / minimum_unit)
-                    for j in range(start, end):
-                        coedge_partition[7].append(l['layer_name']+'_'+str(j))
-
-            for p_id in range(dataset.num_partitions):
-                for i in range(8):
-                    if dataset.system_manager.service_set.partitions[p_id].layer_name in coedge_partition[i]:
-                        dataset.coarsened_graph[p_id] = i
-
-        coedge_psoga = PSOGA(dataset=dataset, num_particles=100, w_max=0.2, w_min=0.05, c1=0.2, c2=0.1)
-        coedge_genetic = Genetic(dataset=dataset, num_solutions=100, mutation_ratio=0.1, cross_over_ratio=0.1)
-
-        start = time.time()
-        x_lst, y_lst = coedge_psoga.run_algo(loop=1000, verbose=100, local_search=False)
-        coedge_psoga_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="CoEdge PSO-GA Algorithm")
-
-        # start = time.time()
-        # x_lst, y_lst = coedge_genetic.run_algo(loop=1000, verbose=100, local_search=False)
-        # coedge_genetic_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="CoEdge Genetic Algorithm")
-
-
-
-    energy_efficient = True
-    if energy_efficient:
-        for idx, l in enumerate(dataset.service_info[0]['layers']):
-            for p in dataset.system_manager.service_set.partitions:
-                if l['layer_name'] == p.original_layer_name:
-                    dataset.coarsened_graph[p.id] = idx
-
-        energy_efficient_psoga = PSOGA(dataset=dataset, num_particles=100, w_max=0.2, w_min=0.05, c1=0.2, c2=0.1)
-        energy_efficient_genetic = Genetic(dataset=dataset, num_solutions=100, mutation_ratio=0.1, cross_over_ratio=0.1)
-
-        start = time.time()
-        x_lst, y_lst = energy_efficient_psoga.run_algo(loop=1000, verbose=100, local_search=False)
-        energy_efficient_psoga_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Energy Efficient PSO-GA Algorithm")
+    # x_lst = np.full(shape=(dataset.num_timeslots, dataset.num_partitions), fill_value=dataset.system_manager.net_manager.request_device, dtype=np.int32)
+    # y_lst = np.array([np.array(sorted(zip(dataset.system_manager.rank_u, np.arange(dataset.num_partitions)), reverse=True), dtype=np.int32)[:,1] for _ in range(dataset.num_timeslots)])
+    # edge_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Local Only")
+    # print("get_computation_time", sum([p.get_computation_time() for p in dataset.system_manager.service_set.partitions]))
 
     # start = time.time()
-    # x_lst, y_lst = energy_efficient_genetic.run_algo(loop=1000, verbose=100, local_search=False)
-    # energy_efficient_genetic_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Energy Efficient Genetic Algorithm")
+    # x_lst = np.full(shape=(dataset.num_timeslots, dataset.num_partitions), fill_value=list(dataset.system_manager.edge.keys())[0], dtype=np.int32)
+    # y_lst = np.array([np.array(sorted(zip(dataset.system_manager.rank_u, np.arange(dataset.num_partitions)), reverse=True), dtype=np.int32)[:,1] for _ in range(dataset.num_timeslots)])
+    # edge_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Edge Only")
+    # print("get_computation_time", sum([p.get_computation_time() for p in dataset.system_manager.service_set.partitions]))
+
+    # # start = time.time()
+    # # x_lst, y_lst = greedy.run_algo_layer(dataset)
+    # # heft_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Partition-based HEFT Algorithm")
+
+    # # dataset.system_manager.set_env(deployed_server=x_lst[0], execution_order=y_lst[0])
+    # # delay = dataset.system_manager.total_time_dp()
+    # # for svc in dataset.system_manager.service_set.services:
+    # #     svc.deadline = delay[svc.id] * 0.5
+
+    # # start = time.time()
+    # # x_lst, y_lst = psoga.run_algo(loop=500, verbose=100, local_search=False)
+    # # psoga_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="PSO-GA Algorithm")
+
+    # # start = time.time()
+    # # x_lst, y_lst = genetic.run_algo(loop=500, verbose=100, local_search=True)
+    # # genetic_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Genetic Algorithm")
+
+
+
+    # print("\n========== CoEdge Start ==========\n")
+    # coedge = True
+    # if coedge:
+    #     coedge_partition = dict()
+    #     if dataset.service_info[0]['model_name'] == 'GoogLeNet':
+    #         for i in range(7):
+    #             coedge_partition[i] = []
+    #         for l in dataset.service_info[0]['layers']:
+    #             p_lst = [p.layer_name for p in dataset.system_manager.service_set.partitions if p.original_layer_name == l['layer_name']]
+    #             if l['layer_type'] == 'cnn' or l['layer_type'] == 'maxpool':
+    #                 for i in range(6):
+    #                     start = math.floor(len(p_lst) / 6 * i)
+    #                     end = math.floor(len(p_lst) / 6 * (i + 1))
+    #                     for j in range(start, end):
+    #                         coedge_partition[i].append(l['layer_name']+'_'+str(j))
+    #             elif l['layer_type'] == 'fc':
+    #                 coedge_partition[6].extend(p_lst)
+
+    #         for p_id in range(dataset.num_partitions):
+    #             for i in range(7):
+    #                 if dataset.system_manager.service_set.partitions[p_id].layer_name in coedge_partition[i]:
+    #                     dataset.coarsened_graph[p_id] = i
+
+    #     elif dataset.service_info[0]['model_name'] == 'AlexNet':
+    #         for i in range(7):
+    #             coedge_partition[i] = []
+    #         for l in dataset.service_info[0]['layers']:
+    #             p_lst = [p.layer_name for p in dataset.system_manager.service_set.partitions if p.original_layer_name == l['layer_name']]
+    #             if l['layer_type'] == 'cnn' or l['layer_type'] == 'maxpool':
+    #                 for i in range(6):
+    #                     start = math.floor(len(p_lst) / 6 * i)
+    #                     end = math.floor(len(p_lst) / 6 * (i + 1))
+    #                     for j in range(start, end):
+    #                         coedge_partition[i].append(l['layer_name']+'_'+str(j))
+    #             elif l['layer_type'] == 'fc':
+    #                 coedge_partition[6].extend(p_lst)
+
+    #         for p_id in range(dataset.num_partitions):
+    #             for i in range(7):
+    #                 if dataset.system_manager.service_set.partitions[p_id].layer_name in coedge_partition[i]:
+    #                     dataset.coarsened_graph[p_id] = i
+
+    #     elif dataset.service_info[0]['model_name'] == 'ResNet-50':
+    #         for i in range(8):
+    #             coedge_partition[i] = []
+    #         for l in dataset.service_info[0]['layers']:
+    #             p_lst = [p.layer_name for p in dataset.system_manager.service_set.partitions if p.original_layer_name == l['layer_name']]
+    #             if l['layer_type'] == 'cnn' or l['layer_type'] == 'maxpool' or l['layer_type'] == 'avgpool':
+    #                 for i in range(7):
+    #                     start = math.floor(len(p_lst) / 7 * i)
+    #                     end = math.floor(len(p_lst) / 7 * (i + 1))
+    #                     for j in range(start, end):
+    #                         coedge_partition[i].append(l['layer_name']+'_'+str(j))
+    #             elif l['layer_type'] == 'fc':
+    #                 coedge_partition[7].extend(p_lst)
+
+    #         for p_id in range(dataset.num_partitions):
+    #             for i in range(8):
+    #                 if dataset.system_manager.service_set.partitions[p_id].layer_name in coedge_partition[i]:
+    #                     dataset.coarsened_graph[p_id] = i
+
+    #     coedge_psoga = PSOGA(dataset=dataset, num_particles=100, w_max=0.8, w_min=0.2, c1_s=0.8, c1_e=0.2, c2_s=0.4, c2_e=0.8)
+    #     coedge_genetic = Genetic(dataset=dataset, num_solutions=100, mutation_ratio=0.2, cross_over_ratio=0.4)
+
+    #     start = time.time()
+    #     x_lst, y_lst = coedge_psoga.run_algo(loop=500, verbose=100, local_search=False)
+    #     coedge_psoga_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="CoEdge PSO-GA Algorithm")
+
+    #     start = time.time()
+    #     x_lst, y_lst = coedge_genetic.run_algo(loop=500, verbose=100, local_search=True)
+    #     coedge_genetic_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="CoEdge Genetic Algorithm")
+
+
+
+    # energy_efficient = True
+    # if energy_efficient:
+    #     for idx, l in enumerate(dataset.service_info[0]['layers']):
+    #         for p in dataset.system_manager.service_set.partitions:
+    #             if l['layer_name'] == p.original_layer_name:
+    #                 dataset.coarsened_graph[p.id] = idx
+
+    #     energy_efficient_psoga = PSOGA(dataset=dataset, num_particles=100, w_max=0.8, w_min=0.2, c1_s=0.8, c1_e=0.2, c2_s=0.4, c2_e=0.8)
+    #     energy_efficient_genetic = Genetic(dataset=dataset, num_solutions=100, mutation_ratio=0.2, cross_over_ratio=0.4)
+
+    #     start = time.time()
+    #     x_lst, y_lst = energy_efficient_psoga.run_algo(loop=500, verbose=100, local_search=False)
+    #     energy_efficient_psoga_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Energy Efficient PSO-GA Algorithm")
+
+    #     start = time.time()
+    #     x_lst, y_lst = energy_efficient_genetic.run_algo(loop=500, verbose=100, local_search=True)
+    #     energy_efficient_genetic_result = result(dataset, x_lst, y_lst, took=time.time()-start, algorithm_name="Energy Efficient Genetic Algorithm")
 
 
     import matplotlib.pyplot as plt

@@ -123,7 +123,7 @@ class MultiLevelGraphPartitioning:
             gain_priority_queue.sort(key=lambda x: x[0])
         #### testout
         print(len(W_e), len(np.unique(graph)))
-        # print(coarsened, graph)
+        # print(graph)
         # lst = [(graph[p.id-p_start], self.system_manager.service_set.partitions[p.id].layer_name) for p in svc.partitions]
         # print([[item[1] for item in items] for key, items in groupby(sorted(lst, key=lambda x: x[0]), lambda x: x[0])])
         # input()
@@ -235,7 +235,7 @@ class MultiLevelGraphPartitioning:
 
                 #### testout
                 print(len(W_e), len(np.unique(graph)))
-                # print(coarsened, graph)
+                # print(graph)
                 # lst = [(graph[p.id-p_start], self.system_manager.service_set.partitions[p.id].layer_name) for p in svc.partitions]
                 # print([[item[1] for item in items] for key, items in groupby(sorted(lst, key=lambda x: x[0]), lambda x: x[0])])
                 # input()
@@ -330,8 +330,8 @@ class MultiLevelGraphPartitioning:
 
         ### testout
         print(len(W_e), len(np.unique(graph)))
-        # print(coarsened, graph)
-        # lst = [(graph[p.id-p_start], self.system_manager.service_set.partitions[p.id].layer_name) for p in svc.partitions]
-        # print([[item[1] for item in items] for key, items in groupby(sorted(lst, key=lambda x: x[0]), lambda x: x[0])])
+        print(graph)
+        lst = [(graph[p.id-p_start], self.system_manager.service_set.partitions[p.id].layer_name) for p in svc.partitions]
+        print([[item[1] for item in items] for key, items in groupby(sorted(lst, key=lambda x: x[0]), lambda x: x[0])])
         # input()
         return graph, tran_time, self.proc_time

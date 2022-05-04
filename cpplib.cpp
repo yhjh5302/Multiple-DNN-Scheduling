@@ -65,21 +65,27 @@ PyObject* get_completion_time(PyObject* self, PyObject* args) {
         if (partition_predecessor[c_id].size() == 0)
             ready_time[c_id] = get_task_ready_time(deployed_server, execution_order, node_weight, edge_weight, partition_predecessor, partition_successor, ready_time, finish_time, num_partitions, c_id);
 
-    while (!is_done(finish_time, num_partitions)) {
+    for (int n = 0; n < num_partitions; n++) {
+        int first_order = 2147483647;
+        int target_c_id = 0;
+
         for (int c_id = 0; c_id < num_partitions; c_id++) {
-            if (ready_time[c_id] > 0) {
-                finish_time[c_id] = get_task_finish_time(deployed_server, execution_order, node_weight, edge_weight, partition_predecessor, partition_successor, ready_time, finish_time, num_partitions, c_id);
-                for (int succ_id : partition_successor[c_id]) {
-                    bool prepared = true;
-                    for (int pred_id : partition_predecessor[succ_id]) {
-                        if (finish_time[pred_id] == 0) {
-                            prepared = false;
-                        }
-                    }
-                    if (prepared) {
-                        ready_time[succ_id] = get_task_ready_time(deployed_server, execution_order, node_weight, edge_weight, partition_predecessor, partition_successor, ready_time, finish_time, num_partitions, succ_id);
-                    }
+            if (ready_time[c_id] > 0 && finish_time[c_id] == 0 && first_order > execution_order[c_id]) {
+                first_order = execution_order[c_id];
+                target_c_id = c_id;
+            }
+        }
+
+        finish_time[target_c_id] = get_task_finish_time(deployed_server, execution_order, node_weight, edge_weight, partition_predecessor, partition_successor, ready_time, finish_time, num_partitions, target_c_id);
+        for (int succ_id : partition_successor[target_c_id]) {
+            bool prepared = true;
+            for (int pred_id : partition_predecessor[succ_id]) {
+                if (finish_time[pred_id] == 0) {
+                    prepared = false;
                 }
+            }
+            if (prepared) {
+                ready_time[succ_id] = get_task_ready_time(deployed_server, execution_order, node_weight, edge_weight, partition_predecessor, partition_successor, ready_time, finish_time, num_partitions, succ_id);
             }
         }
     }
@@ -103,14 +109,15 @@ double get_task_ready_time(int *deployed_server, int *execution_order, double *n
                 TF_p = finish_time[pred_id];
             }
             else {
-                TF_p = get_task_finish_time(deployed_server, execution_order, node_weight, edge_weight, partition_predecessor, partition_successor, ready_time, finish_time, num_partitions, pred_id);
-                finish_time[pred_id] = TF_p;
+                std::cout << "Error: predecessor not ready, #" << c_id << std::endl;
+                return -1;
             }
             T_tr = edge_weight[std::make_pair(pred_id, c_id)];
             TR_n = std::max(TF_p + T_tr, TR_n);
         }
     }
-    return TR_n;
+    ready_time[c_id] = TR_n;
+    return ready_time[c_id];
 }
 
 double get_task_finish_time(int *deployed_server, int *execution_order, double *node_weight,
@@ -118,22 +125,16 @@ double get_task_finish_time(int *deployed_server, int *execution_order, double *
                             std::map<int, std::vector<int>> &partition_predecessor,
                             std::map<int, std::vector<int>> &partition_successor,
                             double *ready_time, double *finish_time, int num_partitions, int c_id) {
-    double TR_n = 0, TF_p = 0, T_cp = 0;
-    if (ready_time[c_id] == 0)
-        ready_time[c_id] = get_task_ready_time(deployed_server, execution_order, node_weight, edge_weight, partition_predecessor, partition_successor, ready_time, finish_time, num_partitions, c_id);
+    double TR_n = 0, T_cp = 0;
+    if (ready_time[c_id] == 0) {
+        std::cout << "Error: partition not ready, #" << c_id << std::endl;
+        return -1;
+    }
     TR_n = ready_time[c_id];
 
     for (int p_id = 0; p_id < num_partitions; p_id++) {
-        if (deployed_server[c_id] == deployed_server[p_id] && execution_order[p_id] < execution_order[c_id]) {
-            if (finish_time[p_id] > 0) {
-                TF_p = finish_time[p_id];
-                TR_n = std::max(TF_p, TR_n);
-            }
-            else if (ready_time[p_id] > 0) {
-                TF_p = get_task_finish_time(deployed_server, execution_order, node_weight, edge_weight, partition_predecessor, partition_successor, ready_time, finish_time, num_partitions, p_id);
-                finish_time[p_id] = TF_p;
-                TR_n = std::max(TF_p, TR_n);
-            }
+        if (deployed_server[c_id] == deployed_server[p_id]) {
+            TR_n = std::max(TR_n, finish_time[p_id]);
         }
     }
     T_cp = node_weight[c_id];
