@@ -151,6 +151,7 @@ svc_yaml/
 test_data/
 model_save_test/
 output/
+outputs/
 *.pth
 *.bin
 *.json
