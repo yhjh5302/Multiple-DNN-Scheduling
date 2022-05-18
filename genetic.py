@@ -48,6 +48,7 @@ class PSOGA:
         return w
 
     def generate_random_solutions(self, step=1):
+        return np.array([[self.dataset.partition_device_map for _ in range(self.num_timeslots)] for _ in range(0, self.num_particles)])
         random_solutions = np.zeros((self.num_particles, self.num_timeslots, self.num_partitions))
         start = 0
         end = step
@@ -66,7 +67,7 @@ class PSOGA:
         for t in range(self.num_timeslots):
             self.deployed_server_reparation(action[t])
 
-            for j in np.random.choice(self.num_partitions, size=2, replace=False): # for jth layer
+            for j in np.random.choice(self.num_partitions, size=1, replace=False): # for jth layer
                 # local search x: deployed_server
                 self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(action[t]))
                 max_reward = self.system_manager.get_reward()
@@ -88,7 +89,7 @@ class PSOGA:
         return action
 
     # we have to find local optimum from current chromosomes.
-    def local_search(self, action, local_prob=0.2):
+    def local_search(self, action, local_prob=0.5):
         local_idx = np.random.rand(action.shape[0])
         local_idx = local_idx < local_prob
         local_idx = np.where(local_idx)[0]
@@ -102,16 +103,19 @@ class PSOGA:
         action[local_idx] = np.array(temp)
         return action
 
-    def run_algo(self, loop, verbose=True, local_search=True):
+    def run_algo(self, loop, verbose=True, local_search=True, random_solution=None):
         start = time.time()
         max_reward = -np.inf
         not_changed_loop = 0
         eval_lst = []
 
-        x_t = self.generate_random_solutions()
+        if random_solution is None:
+            x_t = self.generate_random_solutions()
+        else:
+            x_t = random_solution
         x_t = self.reparation(x_t)
         if local_search:
-            x_t = self.local_search(x_t, local_prob=0.2)
+            x_t = self.local_search(x_t, local_prob=0.5)
         p_t, g_t, p_t_eval_lst = self.selection(x_t)
 
         for i in range(loop):
@@ -121,21 +125,23 @@ class PSOGA:
             x_t = self.reparation(x_t)
             
             if local_search:
-                x_t = self.local_search(x_t, local_prob=0.2)
+                x_t = self.local_search(x_t, local_prob=0.5)
             p_t, g_t, p_t_eval_lst = self.selection(x_t, p_t, g_t, p_t_eval_lst=p_t_eval_lst)
             eval_lst.append(np.max(np.sum(p_t_eval_lst, axis=1)))
 
             if max_reward < np.max(np.sum(p_t_eval_lst, axis=1)):
                 max_reward = np.max(np.sum(p_t_eval_lst, axis=1))
                 not_changed_loop = 0
-            elif not_changed_loop > 100:
+            elif not_changed_loop > 50:
                 self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(g_t[0]))
                 t = self.system_manager.total_time_dp()
                 e = [s.energy_consumption() for s in list(self.system_manager.request.values()) + list(self.system_manager.local.values()) + list(self.system_manager.edge.values())]
+                r = self.system_manager.get_reward()
                 print("\033[31mEarly exit loop {}: {:.5f} sec".format(i + 1, time.time() - start))
                 print(g_t[0])
                 print("t:", sum(t), t)
-                print("e:", sum(e), e, "\033[0m")
+                print("e:", sum(e), e)
+                print("r:", r, "\033[0m")
                 return (np.array([self.get_uncoarsened_x(g_t[t]) for t in range(self.num_timeslots)]), eval_lst, time.time() - start)
             else:
                 not_changed_loop += 1
@@ -360,6 +366,7 @@ class Genetic(PSOGA):
         self.cross_over_ratio = cross_over_ratio
 
     def generate_random_solutions(self, step=1):
+        return np.array([[self.dataset.partition_device_map for _ in range(self.num_timeslots)] for _ in range(0, self.num_solutions)])
         random_solutions = np.zeros((self.num_solutions, self.num_timeslots, self.num_partitions))
         start = 0
         end = step
@@ -372,18 +379,21 @@ class Genetic(PSOGA):
         random_solutions[end:self.num_solutions,:,:] = np.random.choice([0]+self.server_lst, size=(self.num_solutions-end, self.num_timeslots, self.num_partitions))
         return random_solutions
 
-    def run_algo(self, loop, verbose=True, local_search=True):
+    def run_algo(self, loop, verbose=True, local_search=True, random_solution=None):
         start = time.time()
         max_reward = -np.inf
         not_changed_loop = 0
         eval_lst = []
 
-        p_t = self.generate_random_solutions()
+        if random_solution is None:
+            p_t = self.generate_random_solutions()
+        else:
+            p_t = random_solution
         p_t = self.reparation(p_t)
 
         p_known = np.copy(p_t)
         if local_search:
-            p_t = self.local_search(p_t, local_prob=0.2)
+            p_t = self.local_search(p_t, local_prob=0.5)
 
         for i in range(loop):
             q_t = self.selection(p_t, p_known)
@@ -393,7 +403,7 @@ class Genetic(PSOGA):
             q_t = self.reparation(q_t)
 
             if local_search:
-                q_t = self.local_search(q_t, local_prob=0.2)
+                q_t = self.local_search(q_t, local_prob=0.5)
             p_known = np.copy(q_t)
             p_t, v = self.fitness_selection(p_t, q_t)
             eval_lst.append(v)
@@ -401,14 +411,16 @@ class Genetic(PSOGA):
             if max_reward < v:
                 max_reward = v
                 not_changed_loop = 0
-            elif not_changed_loop > 100:
+            elif not_changed_loop > 50:
                 self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(p_t[0,0]))
                 t = self.system_manager.total_time_dp()
                 e = [s.energy_consumption() for s in list(self.system_manager.request.values()) + list(self.system_manager.local.values()) + list(self.system_manager.edge.values())]
+                r = self.system_manager.get_reward()
                 print("\033[31mEarly exit loop {}: {:.5f} sec".format(i + 1, time.time() - start))
                 print(p_t[0,0])
                 print("t:", sum(t), t)
-                print("e:", sum(e), e, "\033[0m")
+                print("e:", sum(e), e)
+                print("r:", r, "\033[0m")
                 return (np.array([self.get_uncoarsened_x(p_t[0,t]) for t in range(self.num_timeslots)]), eval_lst, time.time() - start)
             else:
                 not_changed_loop += 1

@@ -12,13 +12,15 @@ MEM_RATIO = 1024 # memory usage per input data (1 KB)
 
 
 class NetworkManager:  # managing data transfer
-    def __init__(self, channel_bandwidth, channel_gain, gaussian_noise, B_edge, B_cloud, request, local, edge, cloud):
+    def __init__(self, channel_bandwidth, channel_gain, gaussian_noise, B_edge_up, B_edge_down, B_cloud_up, B_cloud_down, request, local, edge, cloud):
         self.C = channel_bandwidth
         self.g_wd = channel_gain
         self.sigma_w = gaussian_noise
         self.request_device = [0,1,2,3,4,5,6,7,8]
-        self.B_edge = B_edge
-        self.B_cloud = B_cloud
+        self.B_edge_up = B_edge_up
+        self.B_edge_down = B_edge_down
+        self.B_cloud_up = B_cloud_up
+        self.B_cloud_down = B_cloud_down
         self.B_dd = None
         self.P_dd = None
 
@@ -32,12 +34,16 @@ class NetworkManager:  # managing data transfer
     def communication(self, amount, sender, receiver):
         if sender == receiver:
             return amount / self.memory_bandwidth
-        elif sender in self.local + self.request and receiver in self.local + self.request:
+        elif sender in self.cloud:
+            return amount / self.B_cloud_down
+        elif receiver in self.cloud:
+            return amount / self.B_cloud_up
+        elif sender in self.edge:
+            return amount / self.B_edge_down
+        elif receiver in self.edge:
+            return amount / self.B_edge_up
+        else:
             return amount / self.B_dd[sender, receiver]
-        elif sender in self.cloud or receiver in self.cloud:
-            return amount / self.B_cloud
-        elif sender in self.edge or receiver in self.edge:
-            return amount / self.B_edge
 
     def cal_b_dd(self):
         self.B_dd = np.zeros_like(self.P_dd)
@@ -77,6 +83,7 @@ class SystemManager():
         # for network bandwidth and arrival rate
         self.net_manager = None
 
+        self.num_timeslots = None
         self.num_servers = None
         self.num_services = None
         self.num_partitions = None
@@ -101,12 +108,13 @@ class SystemManager():
         self.service_set.set_arrival(arrival)
 
     def after_timeslot(self, deployed_server, timeslot):
-        self.set_env(deployed_server=deployed_server)
-        self.service_set.update_arrival(timeslot)
+        if self.num_timeslots > 1:
+            self.set_env(deployed_server=deployed_server)
+            self.service_set.update_arrival(timeslot)
 
-        # energy update
-        for server in self.server.values():
-            server.energy_update()
+            # energy update
+            for server in self.server.values():
+                server.energy_update()
 
     def total_time_dp(self):
         if self.concurrence == False:
@@ -125,7 +133,7 @@ class SystemManager():
             num_partitions = len(self.service_set.partitions)
 
             node_weight = np.array([self.computation_time_table[partition.total_id][self.deployed_server[partition.total_id]] for partition in self.service_set.partitions])
-            edge_weight = dag_completion_time.get_edge_weight(self.num_servers, self.num_servers-2, self.num_servers-1, self.net_manager.B_edge, self.net_manager.B_cloud, self.net_manager.memory_bandwidth, self.deployed_server, self.partition_device_map, self.service_set.input_data_size, self.net_manager.B_dd.flatten())
+            edge_weight = dag_completion_time.get_edge_weight(self.num_servers, self.num_servers-2, self.num_servers-1, self.net_manager.B_edge_up, self.net_manager.B_edge_down, self.net_manager.B_cloud_up, self.net_manager.B_cloud_down, self.net_manager.memory_bandwidth, self.deployed_server, self.partition_device_map, self.service_set.input_data_size, self.net_manager.B_dd.flatten())
             # edge_weight = dict()
             # for key, value in self.service_set.input_data_size.items():
             #     if key[0] == key[1]:
@@ -250,7 +258,7 @@ class SystemManager():
         # print("T_n", T_n)
         # print("U_n", U_n)
 
-        utility_factor = sum(T_n)
+        utility_factor = sum(U_n)
 
         energy_factor = []
         for d in list(self.request.values()) + list(self.local.values()) + list(self.edge.values()):
@@ -258,9 +266,9 @@ class SystemManager():
             energy_factor.append(E_d)
         energy_factor = np.sum(energy_factor)
 
-        w_t = 1
+        w_t = 0.99
         w_e = 1 - w_t
-        reward = utility_factor * w_t + energy_factor * w_e
+        reward = -utility_factor * w_t + energy_factor * w_e
         # print("energy_factor", energy_factor * w_e)
         # print("utility_factor", utility_factor * w_t)
         return -reward

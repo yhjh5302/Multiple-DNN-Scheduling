@@ -252,6 +252,7 @@ class DAGDataSet:
 
         # init system manager
         system_manager.net_manager = net_manager
+        system_manager.num_timeslots = self.num_timeslots
         system_manager.num_servers = self.num_servers
         system_manager.num_services = self.num_services
         system_manager.num_partitions = self.num_partitions

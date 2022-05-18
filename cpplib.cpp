@@ -26,7 +26,7 @@ double get_task_finish_time_no_exec_order(int *deployed_server, double *node_wei
                             std::map<int, std::vector<int>> &partition_predecessor,
                             std::map<int, std::vector<int>> &partition_successor,
                             double *ready_time, double *finish_time, int num_partitions, int c_id);
-double get_transmission_time(double amount, int sender, int receiver, double *B_dd, double B_edge, double B_cloud, double memory_bandwidth, int num_servers, int edge_id, int cloud_id);
+double get_transmission_time(double amount, int sender, int receiver, double *B_dd, double B_edge_up, double B_edge_down, double B_cloud_up, double B_cloud_down, double memory_bandwidth, int num_servers, int edge_id, int cloud_id);
 bool mapToDict(std::map<std::pair<int, int>, double> &srcMap, PyObject *destDict);
 bool dictToMap(PyObject *srcDict, std::map<std::pair<int, int>, double> &destMap);
 bool dictToMap(PyObject *srcDict, std::map<int, std::vector<int>> &destMap);
@@ -276,9 +276,9 @@ PyObject* get_edge_weight(PyObject* self, PyObject* args) {
 
     // initialize
     int num_servers, edge_id, cloud_id;
-    double B_edge, B_cloud, memory_bandwidth;
+    double B_edge_up, B_edge_down, B_cloud_up, B_cloud_down, memory_bandwidth;
     PyObject *py_deployed_server, *py_request_device, *py_input_data_size, *py_B_dd;
-    if (!PyArg_ParseTuple(args, "iiidddOOOO", &num_servers, &edge_id, &cloud_id, &B_edge, &B_cloud, &memory_bandwidth, &py_deployed_server, &py_request_device, &py_input_data_size, &py_B_dd)) {
+    if (!PyArg_ParseTuple(args, "iiidddddOOOO", &num_servers, &edge_id, &cloud_id, &B_edge_up, &B_edge_down, &B_cloud_up, &B_cloud_down, &memory_bandwidth, &py_deployed_server, &py_request_device, &py_input_data_size, &py_B_dd)) {
         std::cout << "PyArg_ParseTuple Error" << std::endl;
         return NULL;
     }
@@ -299,10 +299,10 @@ PyObject* get_edge_weight(PyObject* self, PyObject* args) {
     auto iter = input_data_size.begin();
     while (iter != input_data_size.end()) {
         if (iter->first.first == iter->first.second) {
-            edge_weight[iter->first] = get_transmission_time(iter->second, request_device[iter->first.first], deployed_server[iter->first.first], B_dd, B_edge, B_cloud, memory_bandwidth, num_servers, edge_id, cloud_id);
+            edge_weight[iter->first] = get_transmission_time(iter->second, request_device[iter->first.first], deployed_server[iter->first.first], B_dd, B_edge_up, B_edge_down, B_cloud_up, B_cloud_down, memory_bandwidth, num_servers, edge_id, cloud_id);
         }
         else {
-            edge_weight[iter->first] = get_transmission_time(iter->second, deployed_server[iter->first.first], deployed_server[iter->first.second], B_dd, B_edge, B_cloud, memory_bandwidth, num_servers, edge_id, cloud_id);
+            edge_weight[iter->first] = get_transmission_time(iter->second, deployed_server[iter->first.first], deployed_server[iter->first.second], B_dd, B_edge_up, B_edge_down, B_cloud_up, B_cloud_down, memory_bandwidth, num_servers, edge_id, cloud_id);
         }
         ++iter;
     }
@@ -312,15 +312,21 @@ PyObject* get_edge_weight(PyObject* self, PyObject* args) {
     return py_edge_weight;
 }
 
-double get_transmission_time(double amount, int sender, int receiver, double *B_dd, double B_edge, double B_cloud, double memory_bandwidth, int num_servers, int edge_id, int cloud_id) {
+double get_transmission_time(double amount, int sender, int receiver, double *B_dd, double B_edge_up, double B_edge_down, double B_cloud_up, double B_cloud_down, double memory_bandwidth, int num_servers, int edge_id, int cloud_id) {
     if (sender == receiver) {
         return amount / memory_bandwidth;
     }
-    else if (sender == cloud_id || receiver == cloud_id) {
-        return amount / B_cloud;
+    else if (sender == cloud_id) {
+        return amount / B_cloud_down;
     }
-    else if (sender == edge_id || receiver == edge_id) {
-        return amount / B_edge;
+    else if (receiver == cloud_id) {
+        return amount / B_cloud_up;
+    }
+    else if (sender == edge_id) {
+        return amount / B_edge_down;
+    }
+    else if (receiver == edge_id) {
+        return amount / B_edge_up;
     }
     else {
         return amount / B_dd[sender * num_servers + receiver];
