@@ -47,8 +47,9 @@ class PSOGA:
         w = self.w_max - (self.w_max - self.w_min) * np.exp(ps / (ps - 1.01))
         return w
 
-    def generate_random_solutions(self, step=1):
-        return np.array([[self.dataset.partition_device_map for _ in range(self.num_timeslots)] for _ in range(0, self.num_particles)])
+    def generate_random_solutions(self, step=2):
+        return np.full(shape=(self.num_particles, self.num_timeslots, self.num_partitions), fill_value=self.server_lst[-1])
+        # return np.array([[self.dataset.partition_device_map for _ in range(self.num_timeslots)] for _ in range(0, self.num_particles)])
         random_solutions = np.zeros((self.num_particles, self.num_timeslots, self.num_partitions))
         start = 0
         end = step
@@ -67,7 +68,7 @@ class PSOGA:
         for t in range(self.num_timeslots):
             self.deployed_server_reparation(action[t])
 
-            for j in np.random.choice(self.num_partitions, size=1, replace=False): # for jth layer
+            for j in np.random.choice(self.num_partitions, size=2, replace=False): # for jth layer
                 # local search x: deployed_server
                 self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(action[t]))
                 max_reward = self.system_manager.get_reward()
@@ -89,7 +90,7 @@ class PSOGA:
         return action
 
     # we have to find local optimum from current chromosomes.
-    def local_search(self, action, local_prob=0.5):
+    def local_search(self, action, local_prob=0.2):
         local_idx = np.random.rand(action.shape[0])
         local_idx = local_idx < local_prob
         local_idx = np.where(local_idx)[0]
@@ -115,7 +116,7 @@ class PSOGA:
             x_t = random_solution
         x_t = self.reparation(x_t)
         if local_search:
-            x_t = self.local_search(x_t, local_prob=0.5)
+            x_t = self.local_search(x_t, local_prob=0.2)
         p_t, g_t, p_t_eval_lst = self.selection(x_t)
 
         for i in range(loop):
@@ -125,7 +126,7 @@ class PSOGA:
             x_t = self.reparation(x_t)
             
             if local_search:
-                x_t = self.local_search(x_t, local_prob=0.5)
+                x_t = self.local_search(x_t, local_prob=0.2)
             p_t, g_t, p_t_eval_lst = self.selection(x_t, p_t, g_t, p_t_eval_lst=p_t_eval_lst)
             eval_lst.append(np.max(np.sum(p_t_eval_lst, axis=1)))
 
@@ -350,7 +351,7 @@ class PSOGA:
 
 
 class Genetic(PSOGA):
-    def __init__(self, dataset, num_solutions, mutation_ratio=0.5, cross_over_ratio=0.7):
+    def __init__(self, dataset, num_solutions, mutation_ratio=0.3, cross_over_ratio=0.7):
         self.num_solutions = num_solutions
         self.dataset = dataset
         self.system_manager = dataset.system_manager
@@ -365,8 +366,9 @@ class Genetic(PSOGA):
         self.mutation_ratio = mutation_ratio
         self.cross_over_ratio = cross_over_ratio
 
-    def generate_random_solutions(self, step=1):
-        return np.array([[self.dataset.partition_device_map for _ in range(self.num_timeslots)] for _ in range(0, self.num_solutions)])
+    def generate_random_solutions(self, step=2):
+        return np.full(shape=(self.num_solutions, self.num_timeslots, self.num_partitions), fill_value=self.server_lst[-1])
+        # return np.array([[self.dataset.partition_device_map for _ in range(self.num_timeslots)] for _ in range(0, self.num_solutions)])
         random_solutions = np.zeros((self.num_solutions, self.num_timeslots, self.num_partitions))
         start = 0
         end = step
@@ -393,17 +395,16 @@ class Genetic(PSOGA):
 
         p_known = np.copy(p_t)
         if local_search:
-            p_t = self.local_search(p_t, local_prob=0.5)
+            p_t = self.local_search(p_t, local_prob=0.2)
 
         for i in range(loop):
             q_t = self.selection(p_t, p_known)
-
-            q_t = self.crossover(q_t, self.cross_over_ratio)
             q_t = self.mutation(q_t, self.mutation_ratio)
+            q_t = self.crossover(q_t, self.cross_over_ratio)
             q_t = self.reparation(q_t)
 
             if local_search:
-                q_t = self.local_search(q_t, local_prob=0.5)
+                q_t = self.local_search(q_t, local_prob=0.2)
             p_known = np.copy(q_t)
             p_t, v = self.fitness_selection(p_t, q_t)
             eval_lst.append(v)

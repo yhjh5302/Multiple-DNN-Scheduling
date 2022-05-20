@@ -29,7 +29,7 @@ class NetworkManager:  # managing data transfer
         self.edge = list(edge.keys())
         self.cloud = list(cloud.keys())
 
-        self.memory_bandwidth = 1024*1024*400
+        self.memory_bandwidth = 1024*1024*1024*20 # DDR4
 
     def communication(self, amount, sender, receiver):
         if sender == receiver:
@@ -254,24 +254,24 @@ class SystemManager():
 
     def get_reward(self):
         T_n = self.total_time_dp()
-        U_n = self.calc_utility(T_n)
+        # U_n = self.calc_utility(T_n)
         # print("T_n", T_n)
         # print("U_n", U_n)
 
-        utility_factor = sum(U_n)
+        utility_factor = sum(T_n)
 
-        energy_factor = []
-        for d in list(self.request.values()) + list(self.local.values()) + list(self.edge.values()):
-            E_d = d.energy_consumption()
-            energy_factor.append(E_d)
-        energy_factor = np.sum(energy_factor)
+        # energy_factor = []
+        # for d in list(self.request.values()) + list(self.local.values()) + list(self.edge.values()):
+        #     E_d = d.energy_consumption()
+        #     energy_factor.append(E_d)
+        # energy_factor = np.sum(energy_factor)
 
-        w_t = 0.99
-        w_e = 1 - w_t
-        reward = -utility_factor * w_t + energy_factor * w_e
+        w_t = -1
+        w_e = 0
+        reward = utility_factor * w_t #+ energy_factor * w_e
         # print("energy_factor", energy_factor * w_e)
         # print("utility_factor", utility_factor * w_t)
-        return -reward
+        return reward
 
     def calc_utility(self, T_n):
         U_n = np.zeros(shape=(self.num_services, ))

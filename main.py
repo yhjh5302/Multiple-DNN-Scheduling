@@ -79,7 +79,7 @@ if __name__=="__main__":
     result_by_services = []
 
     service_low = 3
-    service_high = 9
+    service_high = 3
     service_step = 3
     for num_services in range(service_low, service_high+1, service_step):
         print(":::::::::: M ==", num_services, "::::::::::\n")
@@ -103,7 +103,7 @@ if __name__=="__main__":
         psoga_took_lst = []
         genetic_took_lst = []
 
-        dataset = DAGDataSet(num_timeslots=1, num_services=num_services, net_manager=test_dataset.system_manager.net_manager)
+        dataset = DAGDataSet(num_timeslots=1, num_services=num_services, net_manager=test_dataset.system_manager.net_manager, apply_partition='horizontal')
         #dataset.system_manager.scheduling_policy = 'EFT'
 
         dataset.system_manager.set_env(deployed_server=np.full(shape=dataset.num_partitions, fill_value=list(dataset.system_manager.local.keys())[0], dtype=np.int32))
@@ -118,11 +118,11 @@ if __name__=="__main__":
 
         greedy = Greedy(dataset=dataset)
         psoga = PSOGA(dataset=dataset, num_particles=50, w_max=0.8, w_min=0.2, c1_s=0.9, c1_e=0.2, c2_s=0.4, c2_e=0.9)
-        genetic = Genetic(dataset=dataset, num_solutions=50, mutation_ratio=0.3, cross_over_ratio=0.9)
+        genetic = Genetic(dataset=dataset, num_solutions=50, mutation_ratio=0.4, cross_over_ratio=0.8)
 
         result_by_servers = []
 
-        server_low = 0
+        server_low = 10
         server_high = 10
         server_step = 2
         for num_servers in range(server_low, server_high+1, server_step):
@@ -145,42 +145,42 @@ if __name__=="__main__":
             greedy_took = [time.time() - start]
             greedy_result.append(result(dataset, greedy_x_lst, took=greedy_took, algorithm_name="Greedy Algorithm (M={}, D={})".format(num_services, num_servers)))
 
-            dataset.system_manager.init_env()
-            dataset.system_manager.set_env(deployed_server=greedy_x_lst[0][0])
-            deadline = dataset.system_manager.total_time_dp()
-            for svc in dataset.svc_set.services:
-                svc.deadline = deadline[svc.id]
+            # dataset.system_manager.init_env()
+            # dataset.system_manager.set_env(deployed_server=greedy_x_lst[0][0])
+            # deadline = dataset.system_manager.total_time_dp()
+            # for svc in dataset.svc_set.services:
+            #     svc.deadline = deadline[svc.id]
 
-            iteration = 10
+            iteration = 5
             loop = 300
 
             genetic.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys())
             psoga.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys())
 
-            random_solution = psoga.generate_random_solutions()
+            random_solution = None # psoga.generate_random_solutions()
 
-            temp = [genetic.run_algo(loop=loop, verbose=False, local_search=True, random_solution=np.copy(random_solution)) for _ in range(iteration)]
-            memetic_psoga_x_lst = [x for (x, e, t) in temp]
-            memetic_psoga_eval_lst.append([e for (x, e, t) in temp])
-            memetic_psoga_took = [t for (x, e, t) in temp]
-            memetic_psoga_took_lst.append(memetic_psoga_took)
-            memetic_psoga_result.append(sorted(result(dataset, memetic_psoga_x_lst, took=memetic_psoga_took, algorithm_name="Memetic-PSO-GA Algorithm (M={}, D={})".format(num_services, num_servers)), key=itemgetter(2), reverse=True))
+            # temp = [genetic.run_algo(loop=loop, verbose=False, local_search=True) for _ in range(iteration)]
+            # memetic_psoga_x_lst = [x for (x, e, t) in temp]
+            # memetic_psoga_eval_lst.append([e for (x, e, t) in temp])
+            # memetic_psoga_took = [t for (x, e, t) in temp]
+            # memetic_psoga_took_lst.append(memetic_psoga_took)
+            # memetic_psoga_result.append(sorted(result(dataset, memetic_psoga_x_lst, took=memetic_psoga_took, algorithm_name="Memetic-PSO-GA Algorithm (M={}, D={})".format(num_services, num_servers)), key=itemgetter(2), reverse=True))
 
-            temp = [genetic.run_algo(loop=loop, verbose=False, local_search=True, random_solution=np.copy(random_solution)) for _ in range(iteration)]
+            temp = [genetic.run_algo(loop=loop, verbose=False, local_search=True) for _ in range(iteration)]
             memetic_genetic_x_lst = [x for (x, e, t) in temp]
             memetic_genetic_eval_lst.append([e for (x, e, t) in temp])
             memetic_genetic_took = [t for (x, e, t) in temp]
             memetic_genetic_took_lst.append(memetic_genetic_took)
             memetic_genetic_result.append(sorted(result(dataset, memetic_genetic_x_lst, took=memetic_genetic_took, algorithm_name="Memetic-Genetic Algorithm (M={}, D={})".format(num_services, num_servers)), key=itemgetter(2), reverse=True))
 
-            temp = [psoga.run_algo(loop=loop, verbose=False, local_search=False, random_solution=np.copy(random_solution)) for _ in range(iteration)]
+            temp = [psoga.run_algo(loop=loop, verbose=False, local_search=False) for _ in range(iteration)]
             psoga_x_lst = [x for (x, e, t) in temp]
             psoga_eval_lst.append([e for (x, e, t) in temp])
             psoga_took = [t for (x, e, t) in temp]
             psoga_took_lst.append(psoga_took)
             psoga_result.append(sorted(result(dataset, psoga_x_lst, took=psoga_took, algorithm_name="PSO-GA Algorithm (M={}, D={})".format(num_services, num_servers)), key=itemgetter(2), reverse=True))
 
-            temp = [genetic.run_algo(loop=loop, verbose=False, local_search=False, random_solution=np.copy(random_solution)) for _ in range(iteration)]
+            temp = [genetic.run_algo(loop=loop, verbose=False, local_search=False) for _ in range(iteration)]
             genetic_x_lst = [x for (x, e, t) in temp]
             genetic_eval_lst.append([e for (x, e, t) in temp])
             genetic_took = [t for (x, e, t) in temp]
@@ -188,6 +188,9 @@ if __name__=="__main__":
             genetic_result.append(sorted(result(dataset, genetic_x_lst, took=genetic_took, algorithm_name="Genetic Algorithm (M={}, D={})".format(num_services, num_servers)), key=itemgetter(2), reverse=True))
 
         result_by_services.append([local_result, edge_result, greedy_result, memetic_psoga_result, memetic_genetic_result, psoga_result, genetic_result, memetic_psoga_eval_lst, memetic_genetic_eval_lst, psoga_eval_lst, genetic_eval_lst, memetic_psoga_took_lst, memetic_genetic_took_lst, psoga_took_lst, genetic_took_lst, server_low, server_high, server_step, num_services])
+        with open("outputs/results_backup_{}".format(num_services), "wb") as fp:
+            pickle.dump(result_by_services, fp)
+
 
     replace = False
     replace_service = 0

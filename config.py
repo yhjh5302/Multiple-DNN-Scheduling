@@ -115,15 +115,15 @@ request_device_info = [
 
 local_device_info = [
     {
-        'device_name':'Raspberry Pi',
-        'computing_intensity':[1568, 615, 600, 1568, 615, 600, 1568, 615, 600], # GoogLeNet, AlexNet, ResNet-50
-        'computing_frequency':1.2 * (10**12),
+        'device_name':'Jetson Nano',
+        'computing_intensity':[960, 380, 360, 960, 380, 360, 960, 380, 360], # GoogLeNet, AlexNet, ResNet-50
+        'computing_frequency':1.42 * (10**12),
         'computing_capacity':0.5 * (10**12),
         'memory':4 * 1024 * 1024 * 1024, # Byte
         'max_energy':1000,
         'cur_energy':1000,
-        'min_energy_consumption':1.3,
-        'max_energy_consumption':6.5,
+        'min_energy_consumption':5,
+        'max_energy_consumption':10,
         'is_request_device':False,
     },
     {
@@ -134,20 +134,20 @@ local_device_info = [
         'memory':2 * 1024 * 1024 * 1024, # Byte
         'max_energy':2000,
         'cur_energy':2000,
-        'min_energy_consumption':5,
+        'min_energy_consumption':7.5,
         'max_energy_consumption':15,
         'is_request_device':False,
     },
     {
-        'device_name':'Raspberry Pi',
-        'computing_intensity':[1568, 615, 600, 1568, 615, 600, 1568, 615, 600], # GoogLeNet, AlexNet, ResNet-50
-        'computing_frequency':1.2 * (10**12),
+        'device_name':'Jetson Nano',
+        'computing_intensity':[960, 380, 360, 960, 380, 360, 960, 380, 360], # GoogLeNet, AlexNet, ResNet-50
+        'computing_frequency':1.42 * (10**12),
         'computing_capacity':0.5 * (10**12),
         'memory':4 * 1024 * 1024 * 1024, # Byte
         'max_energy':1000,
         'cur_energy':1000,
-        'min_energy_consumption':1.3,
-        'max_energy_consumption':6.5,
+        'min_energy_consumption':5,
+        'max_energy_consumption':10,
         'is_request_device':False,
     },
     {
@@ -158,20 +158,20 @@ local_device_info = [
         'memory':2 * 1024 * 1024 * 1024, # Byte
         'max_energy':2000,
         'cur_energy':2000,
-        'min_energy_consumption':5,
+        'min_energy_consumption':7.5,
         'max_energy_consumption':15,
         'is_request_device':False,
     },
     {
-        'device_name':'Raspberry Pi',
-        'computing_intensity':[1568, 615, 600, 1568, 615, 600, 1568, 615, 600], # GoogLeNet, AlexNet, ResNet-50
-        'computing_frequency':1.2 * (10**12),
+        'device_name':'Jetson Nano',
+        'computing_intensity':[960, 380, 360, 960, 380, 360, 960, 380, 360], # GoogLeNet, AlexNet, ResNet-50
+        'computing_frequency':1.42 * (10**12),
         'computing_capacity':0.5 * (10**12),
         'memory':4 * 1024 * 1024 * 1024, # Byte
         'max_energy':1000,
         'cur_energy':1000,
-        'min_energy_consumption':1.3,
-        'max_energy_consumption':6.5,
+        'min_energy_consumption':5,
+        'max_energy_consumption':10,
         'is_request_device':False,
     },
     {
@@ -182,20 +182,20 @@ local_device_info = [
         'memory':2 * 1024 * 1024 * 1024, # Byte
         'max_energy':2000,
         'cur_energy':2000,
-        'min_energy_consumption':5,
+        'min_energy_consumption':7.5,
         'max_energy_consumption':15,
         'is_request_device':False,
     },
     {
-        'device_name':'Raspberry Pi',
-        'computing_intensity':[1568, 615, 600, 1568, 615, 600, 1568, 615, 600], # GoogLeNet, AlexNet, ResNet-50
-        'computing_frequency':1.2 * (10**12),
+        'device_name':'Jetson Nano',
+        'computing_intensity':[960, 380, 360, 960, 380, 360, 960, 380, 360], # GoogLeNet, AlexNet, ResNet-50
+        'computing_frequency':1.42 * (10**12),
         'computing_capacity':0.5 * (10**12),
         'memory':4 * 1024 * 1024 * 1024, # Byte
         'max_energy':1000,
         'cur_energy':1000,
-        'min_energy_consumption':1.3,
-        'max_energy_consumption':6.5,
+        'min_energy_consumption':5,
+        'max_energy_consumption':10,
         'is_request_device':False,
     },
     {
@@ -206,20 +206,20 @@ local_device_info = [
         'memory':2 * 1024 * 1024 * 1024, # Byte
         'max_energy':2000,
         'cur_energy':2000,
-        'min_energy_consumption':5,
+        'min_energy_consumption':7.5,
         'max_energy_consumption':15,
         'is_request_device':False,
     },
     {
-        'device_name':'Raspberry Pi',
-        'computing_intensity':[1568, 615, 600, 1568, 615, 600, 1568, 615, 600], # GoogLeNet, AlexNet, ResNet-50
-        'computing_frequency':1.2 * (10**12),
+        'device_name':'Jetson Nano',
+        'computing_intensity':[960, 380, 360, 960, 380, 360, 960, 380, 360], # GoogLeNet, AlexNet, ResNet-50
+        'computing_frequency':1.42 * (10**12),
         'computing_capacity':0.5 * (10**12),
         'memory':4 * 1024 * 1024 * 1024, # Byte
         'max_energy':1000,
         'cur_energy':1000,
-        'min_energy_consumption':1.3,
-        'max_energy_consumption':6.5,
+        'min_energy_consumption':5,
+        'max_energy_consumption':10,
         'is_request_device':False,
     },
     {
@@ -230,10 +230,130 @@ local_device_info = [
         'memory':2 * 1024 * 1024 * 1024, # Byte
         'max_energy':2000,
         'cur_energy':2000,
-        'min_energy_consumption':5,
+        'min_energy_consumption':7.5,
         'max_energy_consumption':15,
         'is_request_device':False,
     },
+    # {
+    #     'device_name':'Jetson TX2',
+    #     'computing_intensity':[772, 301, 300, 772, 301, 300, 772, 301, 300], # GoogLeNet, AlexNet, ResNet-50
+    #     'computing_frequency':2 * (10**12),
+    #     'computing_capacity':1 * (10**12),
+    #     'memory':2 * 1024 * 1024 * 1024, # Byte
+    #     'max_energy':2000,
+    #     'cur_energy':2000,
+    #     'min_energy_consumption':7.5,
+    #     'max_energy_consumption':15,
+    #     'is_request_device':False,
+    # },
+    # {
+    #     'device_name':'Jetson TX2',
+    #     'computing_intensity':[772, 301, 300, 772, 301, 300, 772, 301, 300], # GoogLeNet, AlexNet, ResNet-50
+    #     'computing_frequency':2 * (10**12),
+    #     'computing_capacity':1 * (10**12),
+    #     'memory':2 * 1024 * 1024 * 1024, # Byte
+    #     'max_energy':2000,
+    #     'cur_energy':2000,
+    #     'min_energy_consumption':7.5,
+    #     'max_energy_consumption':15,
+    #     'is_request_device':False,
+    # },
+    # {
+    #     'device_name':'Jetson TX2',
+    #     'computing_intensity':[772, 301, 300, 772, 301, 300, 772, 301, 300], # GoogLeNet, AlexNet, ResNet-50
+    #     'computing_frequency':2 * (10**12),
+    #     'computing_capacity':1 * (10**12),
+    #     'memory':2 * 1024 * 1024 * 1024, # Byte
+    #     'max_energy':2000,
+    #     'cur_energy':2000,
+    #     'min_energy_consumption':7.5,
+    #     'max_energy_consumption':15,
+    #     'is_request_device':False,
+    # },
+    # {
+    #     'device_name':'Jetson TX2',
+    #     'computing_intensity':[772, 301, 300, 772, 301, 300, 772, 301, 300], # GoogLeNet, AlexNet, ResNet-50
+    #     'computing_frequency':2 * (10**12),
+    #     'computing_capacity':1 * (10**12),
+    #     'memory':2 * 1024 * 1024 * 1024, # Byte
+    #     'max_energy':2000,
+    #     'cur_energy':2000,
+    #     'min_energy_consumption':7.5,
+    #     'max_energy_consumption':15,
+    #     'is_request_device':False,
+    # },
+    # {
+    #     'device_name':'Jetson TX2',
+    #     'computing_intensity':[772, 301, 300, 772, 301, 300, 772, 301, 300], # GoogLeNet, AlexNet, ResNet-50
+    #     'computing_frequency':2 * (10**12),
+    #     'computing_capacity':1 * (10**12),
+    #     'memory':2 * 1024 * 1024 * 1024, # Byte
+    #     'max_energy':2000,
+    #     'cur_energy':2000,
+    #     'min_energy_consumption':7.5,
+    #     'max_energy_consumption':15,
+    #     'is_request_device':False,
+    # },
+    # {
+    #     'device_name':'Jetson TX2',
+    #     'computing_intensity':[772, 301, 300, 772, 301, 300, 772, 301, 300], # GoogLeNet, AlexNet, ResNet-50
+    #     'computing_frequency':2 * (10**12),
+    #     'computing_capacity':1 * (10**12),
+    #     'memory':2 * 1024 * 1024 * 1024, # Byte
+    #     'max_energy':2000,
+    #     'cur_energy':2000,
+    #     'min_energy_consumption':7.5,
+    #     'max_energy_consumption':15,
+    #     'is_request_device':False,
+    # },
+    # {
+    #     'device_name':'Jetson TX2',
+    #     'computing_intensity':[772, 301, 300, 772, 301, 300, 772, 301, 300], # GoogLeNet, AlexNet, ResNet-50
+    #     'computing_frequency':2 * (10**12),
+    #     'computing_capacity':1 * (10**12),
+    #     'memory':2 * 1024 * 1024 * 1024, # Byte
+    #     'max_energy':2000,
+    #     'cur_energy':2000,
+    #     'min_energy_consumption':7.5,
+    #     'max_energy_consumption':15,
+    #     'is_request_device':False,
+    # },
+    # {
+    #     'device_name':'Jetson TX2',
+    #     'computing_intensity':[772, 301, 300, 772, 301, 300, 772, 301, 300], # GoogLeNet, AlexNet, ResNet-50
+    #     'computing_frequency':2 * (10**12),
+    #     'computing_capacity':1 * (10**12),
+    #     'memory':2 * 1024 * 1024 * 1024, # Byte
+    #     'max_energy':2000,
+    #     'cur_energy':2000,
+    #     'min_energy_consumption':7.5,
+    #     'max_energy_consumption':15,
+    #     'is_request_device':False,
+    # },
+    # {
+    #     'device_name':'Jetson TX2',
+    #     'computing_intensity':[772, 301, 300, 772, 301, 300, 772, 301, 300], # GoogLeNet, AlexNet, ResNet-50
+    #     'computing_frequency':2 * (10**12),
+    #     'computing_capacity':1 * (10**12),
+    #     'memory':2 * 1024 * 1024 * 1024, # Byte
+    #     'max_energy':2000,
+    #     'cur_energy':2000,
+    #     'min_energy_consumption':7.5,
+    #     'max_energy_consumption':15,
+    #     'is_request_device':False,
+    # },
+    # {
+    #     'device_name':'Jetson TX2',
+    #     'computing_intensity':[772, 301, 300, 772, 301, 300, 772, 301, 300], # GoogLeNet, AlexNet, ResNet-50
+    #     'computing_frequency':2 * (10**12),
+    #     'computing_capacity':1 * (10**12),
+    #     'memory':2 * 1024 * 1024 * 1024, # Byte
+    #     'max_energy':2000,
+    #     'cur_energy':2000,
+    #     'min_energy_consumption':7.5,
+    #     'max_energy_consumption':15,
+    #     'is_request_device':False,
+    # },
 ]
 
 edge_server_info = [
@@ -269,7 +389,7 @@ cloud_server_info = [
 service_info = [
     {
         'model_name':'GoogLeNet',
-        'deadline':0.1, # second
+        'deadline':0.2, # second
         'layers':[
             {
                 'layer_name':'conv1',
@@ -2033,7 +2153,7 @@ service_info = [
     },
     {
         'model_name':'ResNet-50',
-        'deadline':0.1, # second
+        'deadline':0.2, # second
         'layers':[
             {
                 'layer_name':'conv1',
@@ -3157,7 +3277,7 @@ service_info = [
     },
     {
         'model_name':'GoogLeNet',
-        'deadline':0.1, # second
+        'deadline':0.2, # second
         'layers':[
             {
                 'layer_name':'conv1',
@@ -4921,7 +5041,7 @@ service_info = [
     },
     {
         'model_name':'ResNet-50',
-        'deadline':0.1, # second
+        'deadline':0.2, # second
         'layers':[
             {
                 'layer_name':'conv1',
@@ -6045,7 +6165,7 @@ service_info = [
     },
     {
         'model_name':'GoogLeNet',
-        'deadline':0.1, # second
+        'deadline':1.0, # second
         'layers':[
             {
                 'layer_name':'conv1',
@@ -7589,7 +7709,7 @@ service_info = [
     },
     {
         'model_name':'AlexNet',
-        'deadline':0.1, # second
+        'deadline':1.0, # second
         'layers':[
             {
                 'layer_name':'conv1',
@@ -7809,7 +7929,7 @@ service_info = [
     },
     {
         'model_name':'ResNet-50',
-        'deadline':0.1, # second
+        'deadline':1.0, # second
         'layers':[
             {
                 'layer_name':'conv1',

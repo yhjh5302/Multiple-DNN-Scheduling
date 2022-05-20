@@ -12,8 +12,10 @@ class DAGDataSet:
         self.num_services = num_services
         self.apply_partition = apply_partition
         self.svc_set, self.system_manager = self.data_gen(net_manager=net_manager, svc_arrival=svc_arrival)
-        if apply_partition:
-            self.coarsened_graph = self.CoEdge_partitioning()
+        if apply_partition == 'hybrid':
+            self.coarsened_graph = self.hybrid_partitioning()
+        elif apply_partition == 'horizontal':
+            self.coarsened_graph = self.horizontal_partitioning()
         else:
             self.coarsened_graph = [np.arange(len(svc.partitions)) for svc in self.svc_set.services]
         self.partition_device_map = np.array([idx for idx, cg in enumerate(self.coarsened_graph) for _ in np.unique(cg)])
@@ -242,13 +244,14 @@ class DAGDataSet:
 
         # create network manager
         if net_manager == None:
-            net_manager = NetworkManager(channel_bandwidth=1024*1024*15, channel_gain=1, gaussian_noise=1, B_edge_up=1024*1024*10, B_edge_down=1024*1024*40, B_cloud_up=1024*1024*1024, B_cloud_down=1024*1024*1024, request=request, local=local, edge=edge, cloud=cloud)
+            net_manager = NetworkManager(channel_bandwidth=1024*1024*15, channel_gain=1, gaussian_noise=1, B_edge_up=1024*1024*10, B_edge_down=1024*1024*10, B_cloud_up=1024*1024*1024, B_cloud_down=1024*1024*1024, request=request, local=local, edge=edge, cloud=cloud)
             net_manager.P_dd = np.zeros(shape=(self.num_servers, self.num_servers))
             for i in range(self.num_servers):
                 for j in range(i + 1, self.num_servers):
                     net_manager.P_dd[i, j] = net_manager.P_dd[j, i] = random.uniform(0.666, 1)
                 net_manager.P_dd[i, i] = 0
             net_manager.cal_b_dd()
+            net_manager.P_dd /= 5
 
         # init system manager
         system_manager.net_manager = net_manager
@@ -267,7 +270,7 @@ class DAGDataSet:
 
         return svc_set, system_manager
 
-    def CoEdge_partitioning(self):
+    def horizontal_partitioning(self):
         coarsened_graph = []
         start = 0
         end = 0
@@ -277,10 +280,10 @@ class DAGDataSet:
             start = end
             end = start + num_partitions
 
-            coedge_partition = dict()
+            horizontal_partition = dict()
             if self.service_info[svc.id]['model_name'] == 'GoogLeNet':
                 for i in range(7):
-                    coedge_partition[i] = []
+                    horizontal_partition[i] = []
                 for l in self.service_info[svc.id]['layers']:
                     p_lst = [p.layer_name for p in svc.partitions if (p.layer_type in ['cnn','maxpool','avgpool'] and p.original_layer_name == l['layer_name']) or (p.layer_type == 'fc' and p.layer_name == l['layer_name'])]
                     if l['layer_type'] in ['cnn','maxpool','avgpool']:
@@ -288,18 +291,18 @@ class DAGDataSet:
                             start = math.floor(len(p_lst) / 6 * i)
                             end = math.floor(len(p_lst) / 6 * (i + 1))
                             for j in range(start, end):
-                                coedge_partition[i].append(l['layer_name']+'_'+str(j))
+                                horizontal_partition[i].append(l['layer_name']+'_'+str(j))
                     elif l['layer_type'] == 'fc':
-                        coedge_partition[6].extend(p_lst)
+                        horizontal_partition[6].extend(p_lst)
 
                 for p_id in range(num_partitions):
                     for i in range(7):
-                        if svc.partitions[p_id].layer_name in coedge_partition[i]:
+                        if svc.partitions[p_id].layer_name in horizontal_partition[i]:
                             cg[p_id] = i
 
             elif self.service_info[svc.id]['model_name'] == 'AlexNet':
                 for i in range(7):
-                    coedge_partition[i] = []
+                    horizontal_partition[i] = []
                 for l in self.service_info[svc.id]['layers']:
                     p_lst = [p.layer_name for p in svc.partitions if (p.layer_type in ['cnn','maxpool','avgpool'] and p.original_layer_name == l['layer_name']) or (p.layer_type == 'fc' and p.layer_name == l['layer_name'])]
                     if l['layer_type'] in ['cnn','maxpool','avgpool']:
@@ -307,18 +310,18 @@ class DAGDataSet:
                             start = math.floor(len(p_lst) / 6 * i)
                             end = math.floor(len(p_lst) / 6 * (i + 1))
                             for j in range(start, end):
-                                coedge_partition[i].append(l['layer_name']+'_'+str(j))
+                                horizontal_partition[i].append(l['layer_name']+'_'+str(j))
                     elif l['layer_type'] == 'fc':
-                        coedge_partition[6].extend(p_lst)
+                        horizontal_partition[6].extend(p_lst)
 
                 for p_id in range(num_partitions):
                     for i in range(7):
-                        if svc.partitions[p_id].layer_name in coedge_partition[i]:
+                        if svc.partitions[p_id].layer_name in horizontal_partition[i]:
                             cg[p_id] = i
 
             elif self.service_info[svc.id]['model_name'] == 'ResNet-50':
                 for i in range(8):
-                    coedge_partition[i] = []
+                    horizontal_partition[i] = []
                 for l in self.service_info[svc.id]['layers']:
                     p_lst = [p.layer_name for p in svc.partitions if (p.layer_type in ['cnn','maxpool','avgpool'] and p.original_layer_name == l['layer_name']) or (p.layer_type == 'fc' and p.layer_name == l['layer_name'])]
                     if l['layer_type'] in ['cnn','maxpool','avgpool']:
@@ -326,18 +329,18 @@ class DAGDataSet:
                             start = math.floor(len(p_lst) / 7 * i)
                             end = math.floor(len(p_lst) / 7 * (i + 1))
                             for j in range(start, end):
-                                coedge_partition[i].append(l['layer_name']+'_'+str(j))
+                                horizontal_partition[i].append(l['layer_name']+'_'+str(j))
                     elif l['layer_type'] == 'fc':
-                        coedge_partition[7].extend(p_lst)
+                        horizontal_partition[7].extend(p_lst)
 
                 for p_id in range(num_partitions):
                     for i in range(8):
-                        if svc.partitions[p_id].layer_name in coedge_partition[i]:
+                        if svc.partitions[p_id].layer_name in horizontal_partition[i]:
                             cg[p_id] = i
 
             elif self.service_info[svc.id]['model_name'] == 'VGG-F':
                 for i in range(8):
-                    coedge_partition[i] = []
+                    horizontal_partition[i] = []
                 for l in self.service_info[svc.id]['layers']:
                     p_lst = [p.layer_name for p in svc.partitions if (p.layer_type in ['cnn','maxpool','avgpool'] and p.original_layer_name == l['layer_name']) or (p.layer_type == 'fc' and p.layer_name == l['layer_name'])]
                     if l['layer_type'] in ['cnn','maxpool','avgpool']:
@@ -345,13 +348,93 @@ class DAGDataSet:
                             start = math.floor(len(p_lst) / 7 * i)
                             end = math.floor(len(p_lst) / 7 * (i + 1))
                             for j in range(start, end):
-                                coedge_partition[i].append(l['layer_name']+'_'+str(j))
+                                horizontal_partition[i].append(l['layer_name']+'_'+str(j))
                     elif l['layer_type'] == 'fc':
-                        coedge_partition[7].extend(p_lst)
+                        horizontal_partition[7].extend(p_lst)
 
                 for p_id in range(num_partitions):
                     for i in range(8):
-                        if svc.partitions[p_id].layer_name in coedge_partition[i]:
+                        if svc.partitions[p_id].layer_name in horizontal_partition[i]:
+                            cg[p_id] = i
+            coarsened_graph.append(cg)
+        return coarsened_graph
+
+    def hybrid_partitioning(self):
+        coarsened_graph = []
+        start = 0
+        end = 0
+        for svc in self.svc_set.services:
+            num_partitions = len(svc.partitions)
+            cg = np.arange(num_partitions)
+            start = end
+            end = start + num_partitions
+
+            hybrid_partition = dict()
+            if self.service_info[svc.id]['model_name'] == 'GoogLeNet':
+                num_layers = len(self.service_info[svc.id]['layers'])
+                for i in range(13):
+                    hybrid_partition[i] = []
+                for l in self.service_info[svc.id]['layers']:
+                    p_lst = [p.layer_name for p in svc.partitions if (p.layer_type in ['cnn','maxpool','avgpool'] and p.original_layer_name == l['layer_name']) or (p.layer_type == 'fc' and p.layer_name == l['layer_name'])]
+                    if l['layer_type'] in ['cnn','maxpool','avgpool']:
+                        for i in range(6):
+                            start = math.floor(len(p_lst) / 6 * i)
+                            end = math.floor(len(p_lst) / 6 * (i + 1))
+                            for j in range(start, end):
+                                if 23 > len(hybrid_partition[i]):
+                                    hybrid_partition[i].append(l['layer_name']+'_'+str(j))
+                                else:
+                                    hybrid_partition[6+i].append(l['layer_name']+'_'+str(j))
+                    elif l['layer_type'] == 'fc':
+                        hybrid_partition[12].extend(p_lst)
+
+                for p_id in range(num_partitions):
+                    for i in range(13):
+                        if svc.partitions[p_id].layer_name in hybrid_partition[i]:
+                            cg[p_id] = i
+
+            elif self.service_info[svc.id]['model_name'] == 'AlexNet':
+                for i in range(13):
+                    hybrid_partition[i] = []
+                for l in self.service_info[svc.id]['layers']:
+                    p_lst = [p.layer_name for p in svc.partitions if (p.layer_type in ['cnn','maxpool','avgpool'] and p.original_layer_name == l['layer_name']) or (p.layer_type == 'fc' and p.layer_name == l['layer_name'])]
+                    if l['layer_type'] in ['cnn','maxpool','avgpool']:
+                        for i in range(6):
+                            start = math.floor(len(p_lst) / 6 * i)
+                            end = math.floor(len(p_lst) / 6 * (i + 1))
+                            for j in range(start, end):
+                                if 4 > len(hybrid_partition[i]):
+                                    hybrid_partition[i].append(l['layer_name']+'_'+str(j))
+                                else:
+                                    hybrid_partition[6+i].append(l['layer_name']+'_'+str(j))
+                    elif l['layer_type'] == 'fc':
+                        hybrid_partition[12].extend(p_lst)
+
+                for p_id in range(num_partitions):
+                    for i in range(13):
+                        if svc.partitions[p_id].layer_name in hybrid_partition[i]:
+                            cg[p_id] = i
+
+            elif self.service_info[svc.id]['model_name'] == 'ResNet-50':
+                for i in range(15):
+                    hybrid_partition[i] = []
+                for l in self.service_info[svc.id]['layers']:
+                    p_lst = [p.layer_name for p in svc.partitions if (p.layer_type in ['cnn','maxpool','avgpool'] and p.original_layer_name == l['layer_name']) or (p.layer_type == 'fc' and p.layer_name == l['layer_name'])]
+                    if l['layer_type'] in ['cnn','maxpool']:
+                        for i in range(7):
+                            start = math.floor(len(p_lst) / 7 * i)
+                            end = math.floor(len(p_lst) / 7 * (i + 1))
+                            for j in range(start, end):
+                                if 25 > len(hybrid_partition[i]):
+                                    hybrid_partition[i].append(l['layer_name']+'_'+str(j))
+                                else:
+                                    hybrid_partition[7+i].append(l['layer_name']+'_'+str(j))
+                    elif l['layer_type'] in ['fc','avgpool']:
+                        hybrid_partition[14].extend(p_lst)
+
+                for p_id in range(num_partitions):
+                    for i in range(15):
+                        if svc.partitions[p_id].layer_name in hybrid_partition[i]:
                             cg[p_id] = i
             coarsened_graph.append(cg)
         return coarsened_graph
