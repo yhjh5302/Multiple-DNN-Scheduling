@@ -68,7 +68,7 @@ class PSOGA:
         for t in range(self.num_timeslots):
             self.deployed_server_reparation(action[t])
 
-            for j in np.random.choice(self.num_partitions, size=2, replace=False): # for jth layer
+            for j in np.random.choice(self.num_partitions, size=1, replace=False): # for jth layer
                 # local search x: deployed_server
                 self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(action[t]))
                 max_reward = self.system_manager.get_reward()
@@ -257,13 +257,10 @@ class PSOGA:
         np.random.seed(random.randint(0,2147483647))
         for t in range(self.num_timeslots):
             x = v_t[t]
-
             mutation_point = np.random.randint(low=0, high=self.num_partitions)
 
             # mutate x: deployed_server
             another_s_id = np.random.choice([0]+self.server_lst)
-            if another_s_id == 0:
-                another_s_id = self.dataset.partition_device_map[mutation_point]
             x[mutation_point] = another_s_id
             v_t[t,:self.num_partitions] = x
         return v_t
@@ -541,8 +538,6 @@ class Genetic(PSOGA):
 
             # mutate x: deployed_server
             another_s_id = np.random.choice([0]+self.server_lst)
-            if another_s_id == 0:
-                another_s_id = self.dataset.partition_device_map[mutation_point]
             action[t,mutation_point] = another_s_id
         return action.reshape(1,self.num_timeslots,-1)
 
@@ -632,9 +627,9 @@ class Greedy:
                             self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(x[t]))
                             p_lst = [svc.partitions[real_p] for real_p in np.where(self.dataset.coarsened_graph[svc.id] == p_id)[0]]
                             self.system_manager.total_time_dp()
-                            latency =  max([svc.finish_time[p.id] for p in p_lst])
-                            print(p_id,"latency",latency, s_id, svc.finish_time, [svc.finish_time[p.id] for p in p_lst])
-                            input()
+                            latency =  max([self.system_manager.finish_time[p.id] for p in p_lst])
+                            # print(p_id,"latency",latency, s_id, self.system_manager.finish_time, [self.system_manager.finish_time[p.id] for p in p_lst])
+                            # input()
                             if latency < minimum_latency:
                                 minimum_latency = latency
                             else:

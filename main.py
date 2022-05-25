@@ -78,8 +78,8 @@ if __name__=="__main__":
 
     result_by_services = []
 
-    service_low = 3
-    service_high = 3
+    service_low = 1
+    service_high = 1
     service_step = 3
     for num_services in range(service_low, service_high+1, service_step):
         print(":::::::::: M ==", num_services, "::::::::::\n")
@@ -103,7 +103,7 @@ if __name__=="__main__":
         psoga_took_lst = []
         genetic_took_lst = []
 
-        dataset = DAGDataSet(num_timeslots=1, num_services=num_services, net_manager=test_dataset.system_manager.net_manager, apply_partition='horizontal')
+        dataset = DAGDataSet(num_timeslots=1, num_services=num_services, net_manager=test_dataset.system_manager.net_manager, apply_partition='horizontal_and_vertical')
         #dataset.system_manager.scheduling_policy = 'EFT'
 
         dataset.system_manager.set_env(deployed_server=np.full(shape=dataset.num_partitions, fill_value=list(dataset.system_manager.local.keys())[0], dtype=np.int32))
@@ -118,7 +118,7 @@ if __name__=="__main__":
 
         greedy = Greedy(dataset=dataset)
         psoga = PSOGA(dataset=dataset, num_particles=50, w_max=0.8, w_min=0.2, c1_s=0.9, c1_e=0.2, c2_s=0.4, c2_e=0.9)
-        genetic = Genetic(dataset=dataset, num_solutions=50, mutation_ratio=0.4, cross_over_ratio=0.8)
+        genetic = Genetic(dataset=dataset, num_solutions=50, mutation_ratio=0.3, cross_over_ratio=0.7)
 
         result_by_servers = []
 

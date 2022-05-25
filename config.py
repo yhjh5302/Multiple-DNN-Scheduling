@@ -9,8 +9,8 @@ request_device_info = [
         'computing_frequency':1.2 * (10**12),
         'computing_capacity':0.5 * (10**12),
         'memory':4 * 1024 * 1024 * 1024, # Byte
-        'max_energy':1000,
-        'cur_energy':1000,
+        'max_energy':20,
+        'cur_energy':20,
         'min_energy_consumption':1.3,
         'max_energy_consumption':6.5,
         'is_request_device':True,
@@ -21,8 +21,8 @@ request_device_info = [
         'computing_frequency':1.2 * (10**12),
         'computing_capacity':0.5 * (10**12),
         'memory':4 * 1024 * 1024 * 1024, # Byte
-        'max_energy':1000,
-        'cur_energy':1000,
+        'max_energy':20,
+        'cur_energy':20,
         'min_energy_consumption':1.3,
         'max_energy_consumption':6.5,
         'is_request_device':True,
@@ -33,8 +33,8 @@ request_device_info = [
         'computing_frequency':1.2 * (10**12),
         'computing_capacity':0.5 * (10**12),
         'memory':4 * 1024 * 1024 * 1024, # Byte
-        'max_energy':1000,
-        'cur_energy':1000,
+        'max_energy':20,
+        'cur_energy':20,
         'min_energy_consumption':1.3,
         'max_energy_consumption':6.5,
         'is_request_device':True,
@@ -45,8 +45,8 @@ request_device_info = [
         'computing_frequency':1.2 * (10**12),
         'computing_capacity':0.5 * (10**12),
         'memory':4 * 1024 * 1024 * 1024, # Byte
-        'max_energy':1000,
-        'cur_energy':1000,
+        'max_energy':20,
+        'cur_energy':20,
         'min_energy_consumption':1.3,
         'max_energy_consumption':6.5,
         'is_request_device':True,
@@ -57,8 +57,8 @@ request_device_info = [
         'computing_frequency':1.2 * (10**12),
         'computing_capacity':0.5 * (10**12),
         'memory':4 * 1024 * 1024 * 1024, # Byte
-        'max_energy':1000,
-        'cur_energy':1000,
+        'max_energy':20,
+        'cur_energy':20,
         'min_energy_consumption':1.3,
         'max_energy_consumption':6.5,
         'is_request_device':True,
@@ -69,8 +69,8 @@ request_device_info = [
         'computing_frequency':1.2 * (10**12),
         'computing_capacity':0.5 * (10**12),
         'memory':4 * 1024 * 1024 * 1024, # Byte
-        'max_energy':1000,
-        'cur_energy':1000,
+        'max_energy':20,
+        'cur_energy':20,
         'min_energy_consumption':1.3,
         'max_energy_consumption':6.5,
         'is_request_device':True,
@@ -81,8 +81,8 @@ request_device_info = [
         'computing_frequency':1.2 * (10**12),
         'computing_capacity':0.5 * (10**12),
         'memory':4 * 1024 * 1024 * 1024, # Byte
-        'max_energy':1000,
-        'cur_energy':1000,
+        'max_energy':20,
+        'cur_energy':20,
         'min_energy_consumption':1.3,
         'max_energy_consumption':6.5,
         'is_request_device':True,
@@ -93,8 +93,8 @@ request_device_info = [
         'computing_frequency':1.2 * (10**12),
         'computing_capacity':0.5 * (10**12),
         'memory':4 * 1024 * 1024 * 1024, # Byte
-        'max_energy':1000,
-        'cur_energy':1000,
+        'max_energy':20,
+        'cur_energy':20,
         'min_energy_consumption':1.3,
         'max_energy_consumption':6.5,
         'is_request_device':True,
@@ -105,8 +105,8 @@ request_device_info = [
         'computing_frequency':1.2 * (10**12),
         'computing_capacity':0.5 * (10**12),
         'memory':4 * 1024 * 1024 * 1024, # Byte
-        'max_energy':1000,
-        'cur_energy':1000,
+        'max_energy':20,
+        'cur_energy':20,
         'min_energy_consumption':1.3,
         'max_energy_consumption':6.5,
         'is_request_device':True,
@@ -120,8 +120,8 @@ local_device_info = [
         'computing_frequency':1.42 * (10**12),
         'computing_capacity':0.5 * (10**12),
         'memory':4 * 1024 * 1024 * 1024, # Byte
-        'max_energy':1000,
-        'cur_energy':1000,
+        'max_energy':50,
+        'cur_energy':50,
         'min_energy_consumption':5,
         'max_energy_consumption':10,
         'is_request_device':False,
@@ -132,8 +132,8 @@ local_device_info = [
         'computing_frequency':2 * (10**12),
         'computing_capacity':1 * (10**12),
         'memory':2 * 1024 * 1024 * 1024, # Byte
-        'max_energy':2000,
-        'cur_energy':2000,
+        'max_energy':100,
+        'cur_energy':100,
         'min_energy_consumption':7.5,
         'max_energy_consumption':15,
         'is_request_device':False,
@@ -144,8 +144,8 @@ local_device_info = [
         'computing_frequency':1.42 * (10**12),
         'computing_capacity':0.5 * (10**12),
         'memory':4 * 1024 * 1024 * 1024, # Byte
-        'max_energy':1000,
-        'cur_energy':1000,
+        'max_energy':50,
+        'cur_energy':50,
         'min_energy_consumption':5,
         'max_energy_consumption':10,
         'is_request_device':False,
@@ -156,8 +156,8 @@ local_device_info = [
         'computing_frequency':2 * (10**12),
         'computing_capacity':1 * (10**12),
         'memory':2 * 1024 * 1024 * 1024, # Byte
-        'max_energy':2000,
-        'cur_energy':2000,
+        'max_energy':100,
+        'cur_energy':100,
         'min_energy_consumption':7.5,
         'max_energy_consumption':15,
         'is_request_device':False,
@@ -168,8 +168,8 @@ local_device_info = [
         'computing_frequency':1.42 * (10**12),
         'computing_capacity':0.5 * (10**12),
         'memory':4 * 1024 * 1024 * 1024, # Byte
-        'max_energy':1000,
-        'cur_energy':1000,
+        'max_energy':50,
+        'cur_energy':50,
         'min_energy_consumption':5,
         'max_energy_consumption':10,
         'is_request_device':False,
@@ -180,8 +180,8 @@ local_device_info = [
         'computing_frequency':2 * (10**12),
         'computing_capacity':1 * (10**12),
         'memory':2 * 1024 * 1024 * 1024, # Byte
-        'max_energy':2000,
-        'cur_energy':2000,
+        'max_energy':100,
+        'cur_energy':100,
         'min_energy_consumption':7.5,
         'max_energy_consumption':15,
         'is_request_device':False,
@@ -192,8 +192,8 @@ local_device_info = [
         'computing_frequency':1.42 * (10**12),
         'computing_capacity':0.5 * (10**12),
         'memory':4 * 1024 * 1024 * 1024, # Byte
-        'max_energy':1000,
-        'cur_energy':1000,
+        'max_energy':50,
+        'cur_energy':50,
         'min_energy_consumption':5,
         'max_energy_consumption':10,
         'is_request_device':False,
@@ -204,8 +204,8 @@ local_device_info = [
         'computing_frequency':2 * (10**12),
         'computing_capacity':1 * (10**12),
         'memory':2 * 1024 * 1024 * 1024, # Byte
-        'max_energy':2000,
-        'cur_energy':2000,
+        'max_energy':100,
+        'cur_energy':100,
         'min_energy_consumption':7.5,
         'max_energy_consumption':15,
         'is_request_device':False,
@@ -216,8 +216,8 @@ local_device_info = [
         'computing_frequency':1.42 * (10**12),
         'computing_capacity':0.5 * (10**12),
         'memory':4 * 1024 * 1024 * 1024, # Byte
-        'max_energy':1000,
-        'cur_energy':1000,
+        'max_energy':50,
+        'cur_energy':50,
         'min_energy_consumption':5,
         'max_energy_consumption':10,
         'is_request_device':False,
@@ -228,8 +228,8 @@ local_device_info = [
         'computing_frequency':2 * (10**12),
         'computing_capacity':1 * (10**12),
         'memory':2 * 1024 * 1024 * 1024, # Byte
-        'max_energy':2000,
-        'cur_energy':2000,
+        'max_energy':100,
+        'cur_energy':100,
         'min_energy_consumption':7.5,
         'max_energy_consumption':15,
         'is_request_device':False,
@@ -240,8 +240,8 @@ local_device_info = [
     #     'computing_frequency':2 * (10**12),
     #     'computing_capacity':1 * (10**12),
     #     'memory':2 * 1024 * 1024 * 1024, # Byte
-    #     'max_energy':2000,
-    #     'cur_energy':2000,
+    #     'max_energy':100,
+    #     'cur_energy':100,
     #     'min_energy_consumption':7.5,
     #     'max_energy_consumption':15,
     #     'is_request_device':False,
@@ -252,8 +252,8 @@ local_device_info = [
     #     'computing_frequency':2 * (10**12),
     #     'computing_capacity':1 * (10**12),
     #     'memory':2 * 1024 * 1024 * 1024, # Byte
-    #     'max_energy':2000,
-    #     'cur_energy':2000,
+    #     'max_energy':100,
+    #     'cur_energy':100,
     #     'min_energy_consumption':7.5,
     #     'max_energy_consumption':15,
     #     'is_request_device':False,
@@ -264,8 +264,8 @@ local_device_info = [
     #     'computing_frequency':2 * (10**12),
     #     'computing_capacity':1 * (10**12),
     #     'memory':2 * 1024 * 1024 * 1024, # Byte
-    #     'max_energy':2000,
-    #     'cur_energy':2000,
+    #     'max_energy':100,
+    #     'cur_energy':100,
     #     'min_energy_consumption':7.5,
     #     'max_energy_consumption':15,
     #     'is_request_device':False,
@@ -276,8 +276,8 @@ local_device_info = [
     #     'computing_frequency':2 * (10**12),
     #     'computing_capacity':1 * (10**12),
     #     'memory':2 * 1024 * 1024 * 1024, # Byte
-    #     'max_energy':2000,
-    #     'cur_energy':2000,
+    #     'max_energy':100,
+    #     'cur_energy':100,
     #     'min_energy_consumption':7.5,
     #     'max_energy_consumption':15,
     #     'is_request_device':False,
@@ -288,8 +288,8 @@ local_device_info = [
     #     'computing_frequency':2 * (10**12),
     #     'computing_capacity':1 * (10**12),
     #     'memory':2 * 1024 * 1024 * 1024, # Byte
-    #     'max_energy':2000,
-    #     'cur_energy':2000,
+    #     'max_energy':100,
+    #     'cur_energy':100,
     #     'min_energy_consumption':7.5,
     #     'max_energy_consumption':15,
     #     'is_request_device':False,
@@ -300,8 +300,8 @@ local_device_info = [
     #     'computing_frequency':2 * (10**12),
     #     'computing_capacity':1 * (10**12),
     #     'memory':2 * 1024 * 1024 * 1024, # Byte
-    #     'max_energy':2000,
-    #     'cur_energy':2000,
+    #     'max_energy':100,
+    #     'cur_energy':100,
     #     'min_energy_consumption':7.5,
     #     'max_energy_consumption':15,
     #     'is_request_device':False,
@@ -312,8 +312,8 @@ local_device_info = [
     #     'computing_frequency':2 * (10**12),
     #     'computing_capacity':1 * (10**12),
     #     'memory':2 * 1024 * 1024 * 1024, # Byte
-    #     'max_energy':2000,
-    #     'cur_energy':2000,
+    #     'max_energy':100,
+    #     'cur_energy':100,
     #     'min_energy_consumption':7.5,
     #     'max_energy_consumption':15,
     #     'is_request_device':False,
@@ -324,8 +324,8 @@ local_device_info = [
     #     'computing_frequency':2 * (10**12),
     #     'computing_capacity':1 * (10**12),
     #     'memory':2 * 1024 * 1024 * 1024, # Byte
-    #     'max_energy':2000,
-    #     'cur_energy':2000,
+    #     'max_energy':100,
+    #     'cur_energy':100,
     #     'min_energy_consumption':7.5,
     #     'max_energy_consumption':15,
     #     'is_request_device':False,
@@ -336,8 +336,8 @@ local_device_info = [
     #     'computing_frequency':2 * (10**12),
     #     'computing_capacity':1 * (10**12),
     #     'memory':2 * 1024 * 1024 * 1024, # Byte
-    #     'max_energy':2000,
-    #     'cur_energy':2000,
+    #     'max_energy':100,
+    #     'cur_energy':100,
     #     'min_energy_consumption':7.5,
     #     'max_energy_consumption':15,
     #     'is_request_device':False,
@@ -348,8 +348,8 @@ local_device_info = [
     #     'computing_frequency':2 * (10**12),
     #     'computing_capacity':1 * (10**12),
     #     'memory':2 * 1024 * 1024 * 1024, # Byte
-    #     'max_energy':2000,
-    #     'cur_energy':2000,
+    #     'max_energy':100,
+    #     'cur_energy':100,
     #     'min_energy_consumption':7.5,
     #     'max_energy_consumption':15,
     #     'is_request_device':False,
@@ -389,7 +389,7 @@ cloud_server_info = [
 service_info = [
     {
         'model_name':'GoogLeNet',
-        'deadline':0.2, # second
+        'deadline':0.1, # second
         'layers':[
             {
                 'layer_name':'conv1',
@@ -2153,7 +2153,7 @@ service_info = [
     },
     {
         'model_name':'ResNet-50',
-        'deadline':0.2, # second
+        'deadline':0.1, # second
         'layers':[
             {
                 'layer_name':'conv1',
@@ -3277,7 +3277,7 @@ service_info = [
     },
     {
         'model_name':'GoogLeNet',
-        'deadline':0.2, # second
+        'deadline':0.1, # second
         'layers':[
             {
                 'layer_name':'conv1',
@@ -5041,7 +5041,7 @@ service_info = [
     },
     {
         'model_name':'ResNet-50',
-        'deadline':0.2, # second
+        'deadline':0.1, # second
         'layers':[
             {
                 'layer_name':'conv1',
@@ -6165,7 +6165,7 @@ service_info = [
     },
     {
         'model_name':'GoogLeNet',
-        'deadline':1.0, # second
+        'deadline':0.1, # second
         'layers':[
             {
                 'layer_name':'conv1',
@@ -7709,7 +7709,7 @@ service_info = [
     },
     {
         'model_name':'AlexNet',
-        'deadline':1.0, # second
+        'deadline':0.1, # second
         'layers':[
             {
                 'layer_name':'conv1',
@@ -7929,7 +7929,7 @@ service_info = [
     },
     {
         'model_name':'ResNet-50',
-        'deadline':1.0, # second
+        'deadline':0.1, # second
         'layers':[
             {
                 'layer_name':'conv1',
