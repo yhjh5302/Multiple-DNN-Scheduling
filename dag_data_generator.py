@@ -26,16 +26,18 @@ class DAGDataSet:
     def create_arrival_rate(self, num_services, minimum, maximum):
         return minimum + (maximum - minimum) * np.random.random(num_services)
 
-    def cnn_partitioning(self, layer_info, min_unit, apply_partition=None):
+    def cnn_partitioning(self, layer_info, num_partitions, min_unit, apply_partition=None):
         min_unit_partitions = []
         output_data_location = []
-        num_partitions = math.floor(layer_info['output_height'] / min_unit)
+        min_unit_start = min_unit_end = 0
         for idx in range(num_partitions):
             partition = deepcopy(layer_info)
             partition['layer_name'] = layer_info['layer_name'] + '_{:d}'.format(idx)
             partition['layer_idx'] = idx
             partition['original_layer_name'] = layer_info['layer_name']
-            partition['output_height'] = min_unit if idx < (num_partitions - 1) else (min_unit + (layer_info['output_height'] % min_unit))
+            min_unit_start = min_unit_end
+            min_unit_end += min_unit
+            partition['output_height'] = min_unit_end - min_unit_start if idx < (num_partitions - 1) else layer_info['output_height'] - min_unit_start
             partition['input_height'] = (partition['output_height'] - 1) * layer_info['stride'] + partition['kernel'] - max(layer_info['padding'] - layer_info['stride'] * min_unit * idx, (layer_info['padding'] - (layer_info['input_height'] + 1) % layer_info['stride']) - layer_info['stride'] * min_unit * (num_partitions - 1 - idx), 0)
             start = max(layer_info['stride'] * min_unit * idx - layer_info['padding'], 0)
             end = start + partition['input_height']
@@ -102,15 +104,23 @@ class DAGDataSet:
                 for layer_info in dnn['layers']:
                     if layer_info['layer_type'] in ['cnn','maxpool','avgpool']:
                         if dnn['model_name'] == 'GoogLeNet':
-                            min_unit = max(math.floor(layer_info['output_height'] / 6), 1)
+                            num_partitions = 6
+                            min_unit = max(math.floor(layer_info['output_height'] / num_partitions), 1)
+                            num_partitions = math.floor(layer_info['output_height'] / min_unit)
                         elif dnn['model_name'] == 'AlexNet':
-                            min_unit = max(math.floor(layer_info['output_height'] / 6), 1)
+                            num_partitions = 6
+                            min_unit = max(math.floor(layer_info['output_height'] / num_partitions), 1)
+                            num_partitions = math.floor(layer_info['output_height'] / min_unit)
+                            if layer_info['layer_name'] == 'conv1':
+                                min_unit -= 1
                         elif dnn['model_name'] == 'ResNet-50':
-                            min_unit = max(math.floor(layer_info['output_height'] / 7), 1)
+                            num_partitions = 7
+                            min_unit = max(math.floor(layer_info['output_height'] / num_partitions), 1)
+                            num_partitions = math.floor(layer_info['output_height'] / min_unit)
                         else:
                             min_unit = 1
 
-                        min_unit_partitions, output_data_location = self.cnn_partitioning(layer_info, min_unit=min_unit, apply_partition=apply_partition)
+                        min_unit_partitions, output_data_location = self.cnn_partitioning(layer_info, num_partitions=num_partitions, min_unit=min_unit, apply_partition=apply_partition)
                         partitioned_layers.append({'layer_name':layer_info['layer_name'], 'layer_type':layer_info['layer_type'], 'min_unit_partitions':min_unit_partitions, 'output_data_location':output_data_location})
                     elif layer_info['layer_type'] == 'fc':
                         partitioned_layers.append(layer_info)
@@ -272,11 +282,11 @@ class DAGDataSet:
 
         # create network manager
         if net_manager == None:
-            net_manager = NetworkManager(channel_bandwidth=1024*1024*15, channel_gain=1, gaussian_noise=1, B_edge_up=1024*1024*10, B_edge_down=1024*1024*10, B_cloud_up=1024*1024*1024, B_cloud_down=1024*1024*1024, request=request, local=local, edge=edge, cloud=cloud)
+            net_manager = NetworkManager(channel_bandwidth=1024*1024*40, channel_gain=1, gaussian_noise=1, B_edge_up=1024*1024*12.5, B_edge_down=1024*1024*50, B_cloud_up=1024*1024*1024, B_cloud_down=1024*1024*1024, request=request, local=local, edge=edge, cloud=cloud)
             net_manager.P_dd = np.zeros(shape=(self.num_servers, self.num_servers))
             for i in range(self.num_servers):
                 for j in range(i + 1, self.num_servers):
-                    net_manager.P_dd[i, j] = net_manager.P_dd[j, i] = random.uniform(0.666, 1)
+                    net_manager.P_dd[i, j] = net_manager.P_dd[j, i] = random.uniform(0.5, 1)
                 net_manager.P_dd[i, i] = 0
             net_manager.cal_b_dd()
             net_manager.P_dd /= 5
@@ -290,11 +300,17 @@ class DAGDataSet:
         system_manager.set_service_set(svc_set, svc_arrival)
         system_manager.set_servers(request, local, edge, cloud)
 
-        system_manager.rank_u = np.zeros(self.num_partitions)
         system_manager.calc_average()
+
+        system_manager.rank_u = np.zeros(self.num_partitions)
         for svc in svc_set.services:
             for partition in svc.partitions:
-                system_manager.calc_rank_u(partition)
+                system_manager.calc_rank_u_average(partition)
+
+        system_manager.rank_ready = np.zeros(self.num_partitions)
+        for svc in svc_set.services:
+            for partition in svc.partitions:
+                system_manager.calc_rank_ready_average(partition)
 
         return svc_set, system_manager
 
@@ -384,7 +400,7 @@ class DAGDataSet:
             horizontal_and_vertical_partition = dict()
             if self.service_info[svc.id]['model_name'] == 'GoogLeNet':
                 num_horizontal_cnn_partitions = 6
-                num_vertical_cnn_partitions = 2
+                num_vertical_cnn_partitions = 3
                 for i in range(num_horizontal_cnn_partitions * num_vertical_cnn_partitions + 1):
                     horizontal_and_vertical_partition[i] = []
                 for l in self.service_info[svc.id]['layers']:
@@ -394,10 +410,12 @@ class DAGDataSet:
                             start = math.floor(len(p_lst) / num_horizontal_cnn_partitions * i)
                             end = math.floor(len(p_lst) / num_horizontal_cnn_partitions * (i + 1))
                             for j in range(start, end):
-                                if 23 > len(horizontal_and_vertical_partition[i]):
-                                    horizontal_and_vertical_partition[i].append(l['layer_name']+'_'+str(j))
+                                if 23 > len(horizontal_and_vertical_partition[i * num_vertical_cnn_partitions + 0]):
+                                    horizontal_and_vertical_partition[i * num_vertical_cnn_partitions + 0].append(l['layer_name']+'_'+str(j))
+                                elif 21 > len(horizontal_and_vertical_partition[i * num_vertical_cnn_partitions + 1]):
+                                    horizontal_and_vertical_partition[i * num_vertical_cnn_partitions + 1].append(l['layer_name']+'_'+str(j))
                                 else:
-                                    horizontal_and_vertical_partition[num_horizontal_cnn_partitions + i].append(l['layer_name']+'_'+str(j))
+                                    horizontal_and_vertical_partition[i * num_vertical_cnn_partitions + 2].append(l['layer_name']+'_'+str(j))
                     elif l['layer_type'] == 'fc':
                         horizontal_and_vertical_partition[num_horizontal_cnn_partitions * num_vertical_cnn_partitions].extend(p_lst)
 
@@ -408,7 +426,7 @@ class DAGDataSet:
 
             elif self.service_info[svc.id]['model_name'] == 'AlexNet':
                 num_horizontal_cnn_partitions = 6
-                num_vertical_cnn_partitions = 2
+                num_vertical_cnn_partitions = 3
                 for i in range(num_horizontal_cnn_partitions * num_vertical_cnn_partitions + 1):
                     horizontal_and_vertical_partition[i] = []
                 for l in self.service_info[svc.id]['layers']:
@@ -418,10 +436,12 @@ class DAGDataSet:
                             start = math.floor(len(p_lst) / num_horizontal_cnn_partitions * i)
                             end = math.floor(len(p_lst) / num_horizontal_cnn_partitions * (i + 1))
                             for j in range(start, end):
-                                if 4 > len(horizontal_and_vertical_partition[i]):
-                                    horizontal_and_vertical_partition[i].append(l['layer_name']+'_'+str(j))
+                                if 2 > len(horizontal_and_vertical_partition[i * num_vertical_cnn_partitions + 0]):
+                                    horizontal_and_vertical_partition[i * num_vertical_cnn_partitions + 0].append(l['layer_name']+'_'+str(j))
+                                elif 3 > len(horizontal_and_vertical_partition[i * num_vertical_cnn_partitions + 1]):
+                                    horizontal_and_vertical_partition[i * num_vertical_cnn_partitions + 1].append(l['layer_name']+'_'+str(j))
                                 else:
-                                    horizontal_and_vertical_partition[num_horizontal_cnn_partitions + i].append(l['layer_name']+'_'+str(j))
+                                    horizontal_and_vertical_partition[i * num_vertical_cnn_partitions + 2].append(l['layer_name']+'_'+str(j))
                     elif l['layer_type'] == 'fc':
                         horizontal_and_vertical_partition[num_horizontal_cnn_partitions * num_vertical_cnn_partitions].extend(p_lst)
 
@@ -432,7 +452,7 @@ class DAGDataSet:
 
             elif self.service_info[svc.id]['model_name'] == 'ResNet-50':
                 num_horizontal_cnn_partitions = 7
-                num_vertical_cnn_partitions = 2
+                num_vertical_cnn_partitions = 3
                 for i in range(num_horizontal_cnn_partitions * num_vertical_cnn_partitions + 1):
                     horizontal_and_vertical_partition[i] = []
                 for l in self.service_info[svc.id]['layers']:
@@ -442,10 +462,12 @@ class DAGDataSet:
                             start = math.floor(len(p_lst) / num_horizontal_cnn_partitions * i)
                             end = math.floor(len(p_lst) / num_horizontal_cnn_partitions * (i + 1))
                             for j in range(start, end):
-                                if 25 > len(horizontal_and_vertical_partition[i]):
-                                    horizontal_and_vertical_partition[i].append(l['layer_name']+'_'+str(j))
+                                if 21 > len(horizontal_and_vertical_partition[i * num_vertical_cnn_partitions + 0]):
+                                    horizontal_and_vertical_partition[i * num_vertical_cnn_partitions + 0].append(l['layer_name']+'_'+str(j))
+                                elif 16 > len(horizontal_and_vertical_partition[i * num_vertical_cnn_partitions + 1]):
+                                    horizontal_and_vertical_partition[i * num_vertical_cnn_partitions + 1].append(l['layer_name']+'_'+str(j))
                                 else:
-                                    horizontal_and_vertical_partition[num_horizontal_cnn_partitions + i].append(l['layer_name']+'_'+str(j))
+                                    horizontal_and_vertical_partition[i * num_vertical_cnn_partitions + 2].append(l['layer_name']+'_'+str(j))
                     elif l['layer_type'] in ['fc','avgpool']:
                         horizontal_and_vertical_partition[num_horizontal_cnn_partitions * num_vertical_cnn_partitions].extend(p_lst)
 
@@ -453,6 +475,7 @@ class DAGDataSet:
                     for i in range(num_horizontal_cnn_partitions * num_vertical_cnn_partitions + 1):
                         if svc.partitions[p_id].layer_name in horizontal_and_vertical_partition[i]:
                             cg[p_id] = i
+
             coarsened_graph.append(cg)
         return coarsened_graph
 
