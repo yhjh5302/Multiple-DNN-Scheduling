@@ -476,7 +476,6 @@ class Service:
 
         # initialize
         self.finish_time = dag_completion_time.get_completion_time(self.num_partitions, deployed_server, execution_order, node_weight, edge_weight, self.partition_predecessor, self.partition_successor)
-        #self.finish_time = dag_completion_time.get_completion_time_no_exec_order(self.num_partitions, deployed_server, node_weight, edge_weight, partition_predecessor, partition_successor)
         return max(self.finish_time)
 
     #  calculate the total completion time of the dag
@@ -561,7 +560,6 @@ class Server:
         self.id = None
         self.deployed_partition = dict()
         self.deployed_partition_memory = dict()
-        self.deployed_partition_computing_capacity = dict()
         if not hasattr(self, "max_energy"):  # max battery
             self.max_energy = 10.
         if not hasattr(self, "cur_energy"):  # current battery
@@ -588,27 +586,21 @@ class Server:
             partition.reset()
         if self.deployed_partition_memory:
             self.deployed_partition_memory.clear()
-        if self.deployed_partition_computing_capacity:
-            self.deployed_partition_computing_capacity.clear()
 
     def deploy_one(self, partition):
         self.deployed_partition[(partition.service.id, partition.id)] = partition
         self.deployed_partition_memory[(partition.service.id, partition.id)] = partition.memory
-        self.deployed_partition_computing_capacity[(partition.service.id, partition.id)] = partition.workload_size * self.computing_intensity[partition.service.id]
 
     def undeploy_one(self, partition):
         self.deployed_partition.pop((partition.service.id, partition.id))
         self.deployed_partition_memory.pop((partition.service.id, partition.id))
-        self.deployed_partition_computing_capacity.pop((partition.service.id, partition.id))
 
     def constraint_chk(self, *args):
         if len(self.deployed_partition) == 0:
             return True
         elif max(self.deployed_partition_memory.values(), default=0) <= self.memory and self.energy_consumption() <= self.cur_energy:
-            # sum(self.deployed_partition_computing_capacity.values()) <= self.computing_capacity and 
             return True
         else:
-            # print("\tcomputing_capacity", sum(self.deployed_partition_computing_capacity.values()) <= self.computing_capacity)
             # print("\tmemory", max(self.deployed_partition_memory.values(), default=0) <= self.memory)
             # print("\tenergy", self.energy_consumption() <= self.cur_energy)
             return False

@@ -294,10 +294,6 @@ class PSOGA:
         for c_id, s_id in enumerate(x):
             if s_id not in self.server_lst:
                 x[c_id] = self.dataset.partition_device_map[c_id]
-        # 같은 DNN 내의 partition이 동떨어져 위치하는 경우
-        for cg in self.dataset.coarsened_graph:
-            print("np.unique(cg)", np.unique(cg))
-            self.dataset.partition_device_map
         while False in self.system_manager.constraint_chk(deployed_server=self.get_uncoarsened_x(x)):
             # 각 서버에 대해서,
             for s_id in range(self.num_servers-1):
@@ -694,79 +690,3 @@ class Greedy:
             print("x[t]", x[t])
             self.system_manager.after_timeslot(deployed_server=self.get_uncoarsened_x(x[t]), timeslot=t)
         return np.array([self.get_uncoarsened_x(x[t]) for t in range(self.num_timeslots)])
-
-
-class JDOFH:
-    def __init__(self, dataset):
-        self.dataset = dataset
-        self.system_manager = dataset.system_manager
-        self.num_servers = dataset.num_servers
-        self.num_timeslots = dataset.num_timeslots
-
-        self.graph = [cg for cg in dataset.coarsened_graph]
-        self.num_partitions = sum([len(cg) for cg in dataset.coarsened_graph])
-
-        self.server_lst = list(self.system_manager.local.keys()) + list(self.system_manager.edge.keys())
-
-    def run_algo(self):
-        self.system_manager.rank_ready = np.zeros(self.num_partitions)
-        for svc in self.dataset.svc_set.services:
-            for partition in svc.partitions:
-                self.system_manager.calc_rank_ready_average(partition)
-        x = np.full(shape=(self.num_timeslots, self.num_partitions), fill_value=self.system_manager.cloud_id, dtype=np.int32)
-        y = np.array([np.array(sorted(zip(self.system_manager.rank_ready, np.arange(self.num_partitions)), reverse=False), dtype=np.int32)[:,1] for _ in range(self.num_timeslots)])
-
-        server_lst = list(self.system_manager.local.keys()) + list(self.system_manager.edge.keys())
-
-        self.system_manager.init_env()
-        for t in range(self.num_timeslots):
-            Tr = Tf = None
-            for _, top_rank in enumerate(y[t]):
-                # initialize the earliest finish time of the task
-                earliest_finish_time = np.inf
-                # for all available server, find earliest finish time server
-                for s_id in server_lst:
-                    temp_x = x[t,top_rank]
-                    x[t,top_rank] = s_id
-                    if self.system_manager.constraint_chk(deployed_server=x[t], execution_order=y[t], s_id=s_id):
-                        self.system_manager.set_env(deployed_server=x[t], execution_order=y[t])
-                        finish_time, temp_Tr, temp_Tf = self.system_manager.get_completion_time(top_rank, Tr, Tf)
-                        if finish_time < earliest_finish_time:
-                            earliest_finish_time = finish_time
-                        else:
-                            x[t,top_rank] = temp_x
-                    else:
-                        x[t,top_rank] = temp_x
-                Tr = temp_Tr
-                Tf = temp_Tf
-            print("x[t]", x[t])
-            self.system_manager.after_timeslot(deployed_server=x[t], execution_order=y[t], timeslot=t)
-        return np.array(x, dtype=np.int32), np.array(y, dtype=np.int32)
-
-
-class IntegerProgramming:
-    def __init__(self, dataset):
-        self.dataset = dataset
-        self.system_manager = dataset.system_manager
-        self.num_servers = dataset.num_servers
-        self.num_timeslots = dataset.num_timeslots
-
-        self.graph = [np.unique(cg) for cg in dataset.coarsened_graph]
-        self.num_partitions = sum([len(np.unique(cg)) for cg in dataset.coarsened_graph])
-
-        self.server_lst = list(self.system_manager.local.keys()) + list(self.system_manager.edge.keys())
-    
-    def get_uncoarsened_x(self, x):
-        result = []
-        start = end = 0
-        for svc in self.dataset.svc_set.services:
-            uncoarsened_x = np.zeros_like(self.dataset.coarsened_graph[svc.id])
-            start = end
-            end += len(self.graph[svc.id])
-            for i, x_i in enumerate(x[start:end]):
-                uncoarsened_x[np.where(self.dataset.coarsened_graph[svc.id]==self.graph[svc.id][i])] = x_i
-            result.append(uncoarsened_x)
-        return np.concatenate(result, axis=None)
-
-    def run_algo(self):
-        pass

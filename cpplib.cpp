@@ -16,16 +16,6 @@ double get_task_finish_time(int *deployed_server, int *execution_order, double *
                             std::map<int, std::vector<int>> &partition_predecessor,
                             std::map<int, std::vector<int>> &partition_successor,
                             double *ready_time, double *finish_time, int num_partitions, int c_id);
-double get_task_ready_time_no_exec_order(int *deployed_server, double *node_weight,
-                            std::map<std::pair<int, int>, double> &edge_weight,
-                            std::map<int, std::vector<int>> &partition_predecessor,
-                            std::map<int, std::vector<int>> &partition_successor,
-                            double *ready_time, double *finish_time, int num_partitions, int c_id);
-double get_task_finish_time_no_exec_order(int *deployed_server, double *node_weight,
-                            std::map<std::pair<int, int>, double> &edge_weight,
-                            std::map<int, std::vector<int>> &partition_predecessor,
-                            std::map<int, std::vector<int>> &partition_successor,
-                            double *ready_time, double *finish_time, int num_partitions, int c_id);
 double get_transmission_time(double amount, int sender, int receiver, double *B_dd, double B_edge_up, double B_edge_down, double B_cloud_up, double B_cloud_down, double memory_bandwidth, int num_servers, int edge_id, int cloud_id);
 bool mapToDict(std::map<std::pair<int, int>, double> &srcMap, PyObject *destDict);
 bool dictToMap(PyObject *srcDict, std::map<std::pair<int, int>, double> &destMap);
@@ -158,114 +148,55 @@ double get_task_finish_time(int *deployed_server, int *execution_order, double *
 
 
 
-PyObject* get_completion_time_no_exec_order(PyObject* self, PyObject* args) {
+PyObject* get_completion_time_ra(PyObject* self, PyObject* args) {
     Py_Initialize();
     import_array();
 
     // initialize
-    int num_partitions;
-    PyObject *py_deployed_server, *py_node_weight, *py_edge_weight, *py_partition_predecessor, *py_partition_successor;
-    if (!PyArg_ParseTuple(args, "iOOOOO", &num_partitions, &py_deployed_server, &py_node_weight, &py_edge_weight, &py_partition_predecessor, &py_partition_successor)) {
+    int num_partitions, num_layers, num_servers, edge_id, cloud_id, request_device;
+    double B_edge_up, B_edge_down, B_cloud_up, B_cloud_down, memory_bandwidth;
+    PyObject *py_input_data_size, *py_B_dd, *py_deployed_server, *py_node_weight, *py_layer_partition_map;
+    if (!PyArg_ParseTuple(args, "iiiiiidddddOOOOO", &num_partitions, &num_layers, &num_servers, &edge_id, &cloud_id, &request_device, &B_edge_up, &B_edge_down, &B_cloud_up, &B_cloud_down, &memory_bandwidth, &py_input_data_size, &py_B_dd, &py_deployed_server, &py_node_weight, &py_layer_partition_map)) {
         std::cout << "PyArg_ParseTuple Error" << std::endl;
         return NULL;
     }
     int *deployed_server = (int*)PyArray_DATA(py_deployed_server);
+    int *layer_partition_map = (int*)PyArray_DATA(py_layer_partition_map);
     double *node_weight = (double*)PyArray_DATA(py_node_weight);
-    std::map<std::pair<int, int>, double> edge_weight;
-    if (!dictToMap(py_edge_weight, edge_weight)) {
+    double *B_dd = (double*)PyArray_DATA(py_B_dd);
+    std::map<std::pair<int, int>, double> input_data_size;
+    if (!dictToMap(py_input_data_size, input_data_size)) {
         std::cout << "dictToMap Error" << std::endl;
         return NULL;
     }
-    std::map<int, std::vector<int>> partition_predecessor;
-    if (!dictToMap(py_partition_predecessor, partition_predecessor)) {
-        std::cout << "listToVector Error" << std::endl;
-        return NULL;
-    }
-    std::map<int, std::vector<int>> partition_successor;
-    if (!dictToMap(py_partition_successor, partition_successor)) {
-        std::cout << "listToVector Error" << std::endl;
-        return NULL;
-    }
+    Py_DECREF(&py_input_data_size);
+    Py_DECREF(&py_B_dd);
     Py_DECREF(&py_deployed_server);
     Py_DECREF(&py_node_weight);
-    Py_DECREF(&py_edge_weight);
-    Py_DECREF(&py_partition_predecessor);
-    Py_DECREF(&py_partition_successor);
-    double *ready_time = new double[num_partitions]();
-    double *finish_time = new double[num_partitions]();
+    Py_DECREF(&py_layer_partition_map);
+    double *edge_weight = new double[num_partitions]();
+    double *layer_completion_time = new double[num_layers]();
+    auto iter = input_data_size.begin();
+    while (iter != input_data_size.end()) {
+        if (iter->first.first == iter->first.second) {
+            edge_weight[iter->first.first] += get_transmission_time(iter->second, request_device, deployed_server[iter->first.first], B_dd, B_edge_up, B_edge_down, B_cloud_up, B_cloud_down, memory_bandwidth, num_servers, edge_id, cloud_id);
+        }
+        else {
+            edge_weight[iter->first.first] += get_transmission_time(iter->second, deployed_server[iter->first.first], deployed_server[iter->first.second], B_dd, B_edge_up, B_edge_down, B_cloud_up, B_cloud_down, memory_bandwidth, num_servers, edge_id, cloud_id);
+        }
+        ++iter;
+    }
 
     // completion time calculation
-    for (int c_id = 0; c_id < num_partitions; c_id++)
-        if (partition_predecessor[c_id].size() == 0)
-            ready_time[c_id] = get_task_ready_time_no_exec_order(deployed_server, node_weight, edge_weight, partition_predecessor, partition_successor, ready_time, finish_time, num_partitions, c_id);
-
-    for (int n = 0; n < num_partitions; n++) {
-        int target_c_id = 0;
-
-        for (int c_id = 0; c_id < num_partitions; c_id++) {
-            if (ready_time[c_id] > 0 && finish_time[c_id] == 0) {
-                target_c_id = c_id;
-            }
-        }
-
-        finish_time[target_c_id] = get_task_finish_time_no_exec_order(deployed_server, node_weight, edge_weight, partition_predecessor, partition_successor, ready_time, finish_time, num_partitions, target_c_id);
-        for (int succ_id : partition_successor[target_c_id]) {
-            bool prepared = true;
-            for (int pred_id : partition_predecessor[succ_id]) {
-                if (finish_time[pred_id] == 0) {
-                    prepared = false;
-                }
-            }
-            if (prepared) {
-                ready_time[succ_id] = get_task_ready_time_no_exec_order(deployed_server, node_weight, edge_weight, partition_predecessor, partition_successor, ready_time, finish_time, num_partitions, succ_id);
-            }
-        }
+    for (int c_id = 0; c_id < num_partitions; c_id++) {
+        int layer_id = layer_partition_map[c_id];
+        layer_completion_time[layer_id] = std::max(layer_completion_time[layer_id], node_weight[c_id] + edge_weight[c_id]);
     }
-
-    npy_intp m = num_partitions;
-    return PyArray_SimpleNewFromData(1, &m, NPY_DOUBLE, (void *)finish_time);
-}
-
-double get_task_ready_time_no_exec_order(int *deployed_server, double *node_weight,
-                            std::map<std::pair<int, int>, double> &edge_weight,
-                            std::map<int, std::vector<int>> &partition_predecessor,
-                            std::map<int, std::vector<int>> &partition_successor,
-                            double *ready_time, double *finish_time, int num_partitions, int c_id) {
-    double TR_n = 0, TF_p = 0, T_tr = 0;
-    if (partition_predecessor[c_id].size() == 0) {
-        TR_n = edge_weight[std::make_pair(c_id, c_id)];
+    double summation = 0;
+    for (int layer_id = 0; layer_id < num_layers; layer_id++) {
+        summation += layer_completion_time[layer_id];
     }
-    else {
-        for (int pred_id : partition_predecessor[c_id]) {
-            if (finish_time[pred_id] > 0) {
-                TF_p = finish_time[pred_id];
-            }
-            else {
-                std::cout << "Error: predecessor not finish, #" << c_id << std::endl;
-                return -1;
-            }
-            T_tr = edge_weight[std::make_pair(pred_id, c_id)];
-            TR_n = std::max(TF_p + T_tr, TR_n);
-        }
-    }
-    ready_time[c_id] = TR_n;
-    return ready_time[c_id];
-}
-
-double get_task_finish_time_no_exec_order(int *deployed_server, double *node_weight,
-                            std::map<std::pair<int, int>, double> &edge_weight,
-                            std::map<int, std::vector<int>> &partition_predecessor,
-                            std::map<int, std::vector<int>> &partition_successor,
-                            double *ready_time, double *finish_time, int num_partitions, int c_id) {
-    double TR_n = 0, T_cp = 0;
-    if (ready_time[c_id] == 0) {
-        std::cout << "Error: partition not ready, #" << c_id << std::endl;
-        return -1;
-    }
-    TR_n = ready_time[c_id];
-    T_cp = node_weight[c_id];
-    finish_time[c_id] = TR_n + T_cp;
-    return finish_time[c_id];
+    return PyFloat_FromDouble(summation);
 }
 
 
@@ -427,7 +358,7 @@ static PyMethodDef dag_completion_time_methods[] = {
     // The first property is the name exposed to Python, fast_tanh, the second is the C++
     // function name that contains the implementation.
     { "get_completion_time", (PyCFunction)get_completion_time, METH_VARARGS, "calculate DAG completion time" },
-    { "get_completion_time_no_exec_order", (PyCFunction)get_completion_time_no_exec_order, METH_VARARGS, "calculate DAG completion time" },
+    { "get_completion_time_ra", (PyCFunction)get_completion_time_ra, METH_VARARGS, "calculate DAG completion time" },
     { "get_edge_weight", (PyCFunction)get_edge_weight, METH_VARARGS, "calculate DAG edge weight" },
  
     // Terminate the array with an object containing nulls.

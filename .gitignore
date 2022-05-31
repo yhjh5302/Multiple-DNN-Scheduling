@@ -152,6 +152,7 @@ test_data/
 model_save_test/
 output/
 output*/
+runs/
 *.pth
 *.bin
 *.json
