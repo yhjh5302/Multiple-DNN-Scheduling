@@ -109,17 +109,29 @@ class SystemManager():
             for server in self.server.values():
                 server.energy_update()
 
-    def total_time(self):
-        result = np.zeros(len(self.service_set.services), dtype=np.float_)
-        start = end = 0
-        for svc in self.service_set.services:
-            num_partitions = len(svc.partitions)
-            start = end
-            end += num_partitions
-            deployed_server = np.array(self.deployed_server[start:end], dtype=np.int32)
-            allocated_resources = np.array(self.allocated_resources[start:end], dtype=np.int32)
-            result[svc.id] = svc.get_completion_time(deployed_server, allocated_resources, self.num_servers, self.net_manager)
-        return result
+    def total_time(self, svc_id=None):
+        if svc_id == None:
+            result = np.zeros(len(self.service_set.services), dtype=np.float_)
+            start = end = 0
+            for svc in self.service_set.services:
+                num_partitions = len(svc.partitions)
+                start = end
+                end += num_partitions
+                deployed_server = np.array(self.deployed_server[start:end], dtype=np.int32)
+                allocated_resources = np.array(self.allocated_resources[start:end], dtype=np.int32)
+                result[svc.id] = svc.get_completion_time(deployed_server, allocated_resources, self.num_servers, self.net_manager)
+            return result
+        else:
+            result = np.zeros(len(self.service_set.services), dtype=np.float_)
+            start = end = 0
+            for svc in self.service_set.services:
+                num_partitions = len(svc.partitions)
+                start = end
+                end += num_partitions
+                deployed_server = np.array(self.deployed_server[start:end], dtype=np.int32)
+                allocated_resources = np.array(self.allocated_resources[start:end], dtype=np.int32)
+                if svc.id == svc_id:
+                    return svc.get_completion_time(deployed_server, allocated_resources, self.num_servers, self.net_manager)
 
     def set_servers(self, request, local, edge, cloud):
         self.request = request
@@ -341,11 +353,11 @@ class Server:
     def constraint_chk(self, *args):
         if len(self.deployed_partition) == 0:
             return True
-        elif max(self.deployed_partition_memory.values(), default=0) <= self.memory and self.energy_consumption() <= self.cur_energy:
+        elif sum(self.deployed_partition_memory.values()) <= self.memory: # and self.energy_consumption() <= self.cur_energy:
             return True
         else:
-            # print("\tmemory", max(self.deployed_partition_memory.values(), default=0) <= self.memory)
-            # print("\tenergy", self.energy_consumption() <= self.cur_energy)
+            # print("\tmemory", sum(self.deployed_partition_memory.values()) / self.memory)
+            # print("\tenergy", self.energy_consumption() / self.cur_energy)
             return False
 
     def energy_update(self):

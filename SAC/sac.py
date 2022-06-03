@@ -20,39 +20,39 @@ class SAC(object):
 
         self.num_states = num_states
         self.num_actions = num_actions
+        print("num_states:", num_states, "num_actions", num_actions)
 
         parser = argparse.ArgumentParser(description='SAC with 2 Q functions, Online updates')
         # Common arguments
         parser.add_argument('--exp-name', type=str, default=os.path.basename(__file__).rstrip(".py"), help='the name of this experiment')
         parser.add_argument('--gym-id', type=str, default="HopperBulletEnv-v0", help='the id of the gym environment')
-        parser.add_argument('--learning-rate', type=float, default=1e-4, help='the learning rate of the optimizer')
         parser.add_argument('--seed', type=int, default=2, help='seed of the experiment')
         parser.add_argument('--episode-length', type=int, default=0, help='the maximum length of each episode')
-        parser.add_argument('--total-timesteps', type=int, default=4000000, help='total timesteps of the experiments')
+        parser.add_argument('--total-timesteps', type=int, default=100000, help='total timesteps of the experiments')
         parser.add_argument('--torch-deterministic', type=lambda x: bool(str2bool(x)), default=True, nargs='?', const=True, help='if toggled, `torch.backends.cudnn.deterministic=False`')
         parser.add_argument('--cuda', type=lambda x: bool(str2bool(x)), default=True, nargs='?', const=True, help='if toggled, cuda will not be enabled by default')
         parser.add_argument('--autotune', type=lambda x: bool(str2bool(x)), default=True, nargs='?', const=True, help='automatic tuning of the entropy coefficient.')
 
         # Algorithm specific arguments
-        parser.add_argument('--buffer-size', type=int, default=10000, help='the replay memory buffer size')
+        parser.add_argument('--buffer-size', type=int, default=10000+1, help='the replay memory buffer size')
+        parser.add_argument('--learning-starts', type=int, default=5000, help="timestep to start learning")
         parser.add_argument('--gamma', type=float, default=0.9, help='the discount factor gamma')
         parser.add_argument('--target-network-frequency', type=int, default=1, help="the timesteps it takes to update the target network") # Denis Yarats' implementation delays this by 2. 
         parser.add_argument('--max-grad-norm', type=float, default=10.0, help='the maximum norm for the gradient clipping')
         parser.add_argument('--batch-size', type=int, default=256, help="the batch size of sample from the reply memory") # Worked better in my experiments, still have to do ablation on this. Please remind me
-        parser.add_argument('--tau', type=float, default=0.1, help="target smoothing coefficient (default: 0.005)")
+        parser.add_argument('--tau', type=float, default=0.005, help="target smoothing coefficient (default: 0.005)")
         parser.add_argument('--alpha', type=float, default=0.2, help="Entropy regularization coefficient.")
-        parser.add_argument('--learning-starts', type=int, default=5e3, help="timestep to start learning")
 
         # Additional hyper parameters for tweaks
         ## Separating the learning rate of the policy and value commonly seen: (Original implementation, Denis Yarats)
         parser.add_argument('--policy-lr', type=float, default=1e-4, help='the learning rate of the policy network optimizer')
-        parser.add_argument('--q-lr', type=float, default=5e-4, help='the learning rate of the Q network network optimizer')
+        parser.add_argument('--q-lr', type=float, default=1e-4, help='the learning rate of the Q network network optimizer')
         parser.add_argument('--policy-frequency', type=int, default=2, help='delays the update of the actor, as per the TD3 paper.')
         # NN Parameterization
         parser.add_argument('--weights-init', default='xavier', const='xavier', nargs='?', choices=['xavier', "orthogonal", 'uniform'], help='weight initialization scheme for the neural networks.')
         parser.add_argument('--bias-init', default='zeros', const='xavier', nargs='?', choices=['zeros', 'uniform'], help='weight initialization scheme for the neural networks.')
-        parser.add_argument('--ent-c', default=-0.01, type=float, help='target entropy of continuous component.')
-        parser.add_argument('--ent-d', default=0.5, type=float, help='target entropy of discrete component.')
+        parser.add_argument('--ent-c', default=-0.25, type=float, help='target entropy of continuous component.')
+        parser.add_argument('--ent-d', default=0.25, type=float, help='target entropy of discrete component.')
 
         args = parser.parse_args()
         if not args.seed:
@@ -62,10 +62,9 @@ class SAC(object):
         writer = SummaryWriter(f"runs/{experiment_name}")
         writer.add_text('hyperparameters', "|param|value|\n|-|-|\n%s" % ('\n'.join([f"|{key}|{value}|" for key, value in vars(args).items()])))
 
-        self.out_c = 1
-        self.out_d = self.num_servers
+        self.out_c = self.out_d = self.num_servers
         self.replay_buffer = ReplayBuffer(args.buffer_size)
-        self.policy_network = Policy(num_states, self.out_c, self.out_d).to(self.device)
+        self.policy_network = Policy(num_states, self.out_c, self.out_d, env).to(self.device)
         self.q1_network = SoftQNetwork(num_states, self.out_c, self.out_d).to(self.device)
         self.q2_network = SoftQNetwork(num_states, self.out_c, self.out_d).to(self.device)
         self.q1_network_target = SoftQNetwork(num_states, self.out_c, self.out_d).to(self.device)
@@ -97,18 +96,20 @@ class SAC(object):
         global_episode = 0
         obs, done = env.reset(), False
         episode_reward, episode_length = 0., 0
+        average_reward = 0.
 
         for global_step in range(1, args.total_timesteps + 1):
             # ALGO LOGIC: put action logic here
             if global_step < args.learning_starts:
-                action = env.sample()
+                action_c, action_d = self.policy_network.sample([obs])
+                action = to_gym_action(action_c, action_d)
             else:
                 action_c, action_d, _, _, _ = self.policy_network.get_action([obs], self.device)
-                action = to_list(action_c, action_d, flat_actions=True)
+                action = to_gym_action(action_c, action_d)
 
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, reward, done, _ = env.next_step(action)
-            self.replay_buffer.put((obs, action, reward, next_obs, done))
+            self.replay_buffer.put((obs, gym_to_buffer(action), reward, next_obs, done))
             episode_reward += reward
             episode_length += 1
             obs = np.array(next_obs)
@@ -124,7 +125,7 @@ class SAC(object):
                     min_qf_next_target = next_state_prob_d * (torch.min(qf1_next_target, qf2_next_target) - alpha * next_state_prob_d * next_state_log_pi_c - alpha_d * next_state_log_pi_d)
                     next_q_value = torch.Tensor(s_rewards).to(self.device) + (1 - torch.Tensor(s_dones).to(self.device)) * args.gamma * (min_qf_next_target.sum(1)).view(-1)
 
-                s_actions_c, s_actions_d = to_torch(s_actions, self.device)
+                s_actions_c, s_actions_d = to_torch_action(s_actions, self.device)
                 qf1_a_values = self.q1_network.forward(s_obs, s_actions_c, self.device).gather(1, s_actions_d.long().view(-1, 1).to(self.device)).squeeze().view(-1)
                 qf2_a_values = self.q2_network.forward(s_obs, s_actions_c, self.device).gather(1, s_actions_d.long().view(-1, 1).to(self.device)).squeeze().view(-1)
                 qf1_loss = loss_fn(qf1_a_values, next_q_value)
@@ -136,8 +137,7 @@ class SAC(object):
                 values_optimizer.step()
 
                 if global_step % args.policy_frequency == 0:  # TD 3 Delayed update support
-                    for _ in range(
-                            args.policy_frequency):  # compensate for the delay by doing 'actor_update_interval' instead of 1
+                    for _ in range(args.policy_frequency):  # compensate for the delay by doing 'actor_update_interval' instead of 1
                         actions_c, actions_d, log_pi_c, log_pi_d, prob_d = self.policy_network.get_action(s_obs, self.device)
                         qf1_pi = self.q1_network.forward(s_obs, actions_c, self.device)
                         qf2_pi = self.q2_network.forward(s_obs, actions_c, self.device)
@@ -183,7 +183,8 @@ class SAC(object):
                 # NOTE: additional changes from cleanrl
                 writer.add_scalar("losses/alpha_d", alpha_d, global_step)
                 writer.add_histogram("actions/discrete", action[0]+1, global_step)
-                writer.add_histogram("actions/continuous", action[1], global_step)
+                for i in range(self.num_servers):
+                    writer.add_histogram("actions/continuous_{}".format(i), action[1][i], global_step)
                 writer.add_scalar("debug/ent_bonus", (- alpha * next_state_prob_d * next_state_log_pi_c - alpha_d * next_state_log_pi_d).sum(1).mean().item(), global_step)
                 writer.add_scalar("debug/next_q", next_q_value.mean().item(), global_step)
                 writer.add_scalar("debug/policy_loss_c", policy_loss_c.item(), global_step)
@@ -206,8 +207,10 @@ class SAC(object):
                 writer.add_scalar("charts/episode_reward", episode_reward, global_step)
                 writer.add_scalar("charts/episode_length", episode_length, global_step)
                 # Terminal verbosity
+                average_reward += 10 - reward * 10
                 if global_episode % 10 == 0:
-                    print(f"Episode: {global_episode} Step: {global_step}, Ep. Reward: {episode_reward}")
+                    print(f"Episode: {global_episode} Step: {global_step}, Ep. Reward: {average_reward / 10}")
+                    average_reward = 0
 
                 # Reseting what need to be
                 obs, done = env.reset(), False

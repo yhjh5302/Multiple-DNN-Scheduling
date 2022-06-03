@@ -11,18 +11,40 @@ import collections
 
 
 class Policy(nn.Module):
-    def __init__(self, input_shape, out_c, out_d):
+    def __init__(self, input_shape, out_c, out_d, env):
         super(Policy, self).__init__()
-        self.fc1 = nn.Linear(input_shape, 1024)  # Better result with slightly wider networks.
-        self.fc2 = nn.Linear(1024, 1024)  # Better result with slightly wider networks.
-        self.fc3 = nn.Linear(1024, 1024)  # Better result with slightly wider networks.
-        self.fc4 = nn.Linear(1024, 1024)  # Better result with slightly wider networks.
-        self.fc5 = nn.Linear(1024, 1024)  # Better result with slightly wider networks.
-        self.mean = nn.Linear(1024, out_c)
-        self.logstd = nn.Linear(1024, out_c)
-        self.pi_d = nn.Linear(1024, out_d)
-        self.weights_init = "orthogonal"
+        self.fc = nn.Sequential(
+            nn.Linear(input_shape, 2048),   # Better result with slightly wider networks.
+            nn.ReLU(),
+            nn.Linear(2048, 2048),
+            nn.ReLU(),
+            nn.Linear(2048, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 1024),
+            nn.ReLU(),
+        )
+        self.mean = nn.Sequential(
+            nn.Linear(1024, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, out_c)
+        )
+        self.logstd = nn.Sequential(
+            nn.Linear(1024, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, out_c)
+        )
+        self.pi_d = nn.Sequential(
+            nn.Linear(1024, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, out_d)
+        )
+        self.weights_init = "xavier"
         self.bias_init = "zeros"
+
+        self.env = env
+        self.num_servers = env.num_servers
 
         # ALGO LOGIC: initialize agent here:
         self.LOG_STD_MAX = 0.0
@@ -41,26 +63,43 @@ class Policy(nn.Module):
 
     def forward(self, x, device):
         x = torch.Tensor(x).to(device)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = F.relu(self.fc3(x))
-        x = F.relu(self.fc4(x))
-        x = F.relu(self.fc5(x))
+        x = self.fc(x)
         mean = torch.tanh(self.mean(x))
         log_std = torch.tanh(self.logstd(x))
         pi_d = self.pi_d(x)
         log_std = self.LOG_STD_MIN + 0.5 * (self.LOG_STD_MAX - self.LOG_STD_MIN) * (log_std + 1)  # From SpinUp / Denis Yarats
         return mean, log_std, pi_d
+    
+    def get_d_mask(self, action_c):
+
+        return 
+
+    def sample(self, x):
+        with torch.no_grad():
+            server_memory = torch.Tensor(x)[:,self.num_servers*1:self.num_servers*2]
+            partition_memory = torch.Tensor(x)[:,self.num_servers*3:self.num_servers*4]
+            action_c = torch.rand(size=(1,self.num_servers,)) * 2 - 1
+            pi_d = torch.rand(size=(1,self.num_servers,)) * 2 - 1
+            pi_d += torch.where(server_memory + partition_memory < 1, torch.tensor(0, dtype=torch.float), torch.full_like(pi_d, fill_value=-float('inf')))
+            dist = Categorical(logits=pi_d)
+            action_d = dist.sample()
+        return action_c, action_d
 
     def get_action(self, x, device):
+        with torch.no_grad():
+            server_memory = torch.Tensor(x).to(device)[:,self.num_servers*1:self.num_servers*2]
+            partition_memory = torch.Tensor(x).to(device)[:,self.num_servers*3:self.num_servers*4]
         mean, log_std, pi_d = self.forward(x, device)
         std = log_std.exp()
         normal = Normal(mean, std)
         x_t = normal.rsample()  # for reparameterization trick (mean + std * N(0,1))
         action_c = torch.tanh(x_t)
+
         log_prob_c = normal.log_prob(x_t)
         log_prob_c -= torch.log(1.0 - action_c.pow(2) + 1e-8)
 
+        with torch.no_grad():
+            pi_d += torch.where(server_memory + partition_memory < 1, torch.tensor(0, dtype=torch.float).to(device), torch.full_like(pi_d, fill_value=-float('inf')).to(device))
         dist = Categorical(logits=pi_d)
         action_d = dist.sample()
         prob_d = dist.probs
@@ -76,13 +115,22 @@ class Policy(nn.Module):
 class SoftQNetwork(nn.Module):
     def __init__(self, input_shape, out_c, out_d):
         super(SoftQNetwork, self).__init__()
-        self.fc1 = nn.Linear(input_shape + out_c, 1024)
-        self.fc2 = nn.Linear(1024, 1024)
-        self.fc3 = nn.Linear(1024, 1024)
-        self.fc4 = nn.Linear(1024, 1024)
-        self.fc5 = nn.Linear(1024, 1024)
-        self.fc6 = nn.Linear(1024, out_d)
-        self.weights_init = "orthogonal"
+        self.fc = nn.Sequential(
+            nn.Linear(input_shape + out_c, 2048),   # Better result with slightly wider networks.
+            nn.ReLU(),
+            nn.Linear(2048, 2048),
+            nn.ReLU(),
+            nn.Linear(2048, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, out_d),
+        )
+        self.weights_init = "xavier"
         self.bias_init = "zeros"
 
         self.apply(self.layer_init)
@@ -99,12 +147,7 @@ class SoftQNetwork(nn.Module):
     def forward(self, x, a, device):
         x = torch.Tensor(x).to(device)
         x = torch.cat([x, a], 1)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = F.relu(self.fc3(x))
-        x = F.relu(self.fc4(x))
-        x = F.relu(self.fc5(x))
-        x = self.fc6(x)
+        x = self.fc(x)
         return x
 
 

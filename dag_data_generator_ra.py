@@ -21,10 +21,12 @@ class DAGDataSet:
         self.partition_workload = [[0 for _ in np.unique(cg)] for cg in self.coarsened_graph]
         for p in self.svc_set.partitions:
             self.partition_workload[p.service.id][self.coarsened_graph[p.service.id][p.id]] += p.workload_size
+        self.partition_workload = [y for x in self.partition_workload for y in x]
         print("self.partition_workload", self.partition_workload)
         self.partition_memory = [[0 for _ in np.unique(cg)] for cg in self.coarsened_graph]
         for p in self.svc_set.partitions:
             self.partition_memory[p.service.id][self.coarsened_graph[p.service.id][p.id]] += p.memory
+        self.partition_memory = [y for x in self.partition_memory for y in x]
         print("self.partition_memory", self.partition_memory)
 
     def create_arrival_rate(self, num_services, minimum, maximum):
@@ -48,6 +50,7 @@ class DAGDataSet:
             partition['input_data_location'] = [i for i in range(start, end)]
             partition['input_data_size'] = partition['input_height'] * partition['input_width'] * partition['input_channel'] * 4
             partition['workload_size'] *= partition['output_height'] / layer_info['output_height']
+            partition['memory'] *= partition['output_height'] / layer_info['output_height']
             output_data_location += [partition['layer_name'] for _ in range(partition['output_height'])]
             min_unit_partitions.append(partition)
         return min_unit_partitions, output_data_location
@@ -63,6 +66,7 @@ class DAGDataSet:
             partition['input_width'] = 1
             partition['input_channel'] = min_unit
             partition['workload_size'] /= num_partitions
+            partition['memory'] /= num_partitions
             min_unit_partitions.append(partition)
         return min_unit_partitions
 
@@ -76,13 +80,19 @@ class DAGDataSet:
             svc = Service(dnn['model_name'], dnn['deadline'])
             
             # workload size calculation
+            batch_size = 8
             for layer_info in dnn['layers']:
                 if layer_info['layer_type'] == 'cnn':
                     layer_info['workload_size'] *= layer_info['output_height'] * layer_info['output_width'] * layer_info['output_channel'] * layer_info['input_channel'] * layer_info['kernel'] * layer_info['kernel']
+                    layer_info['memory'] = layer_info['kernel'] * layer_info['kernel'] * layer_info['input_channel'] * layer_info['output_channel'] * 4 + layer_info['output_channel'] * 4
+                    layer_info['memory'] += layer_info['input_height'] * layer_info['input_width'] * layer_info['input_channel'] * 4 * batch_size
                 elif layer_info['layer_type'] == 'maxpool' or layer_info['layer_type'] == 'avgpool':
                     layer_info['workload_size'] *= layer_info['output_height'] * layer_info['output_width'] * layer_info['output_channel'] * layer_info['kernel'] * layer_info['kernel']
+                    layer_info['memory'] = layer_info['input_height'] * layer_info['input_width'] * layer_info['input_channel'] * 4 * batch_size
                 elif layer_info['layer_type'] == 'fc':
                     layer_info['workload_size'] *= layer_info['output_height'] * layer_info['output_width'] * layer_info['output_channel'] * (2 * layer_info['input_height'] * layer_info['input_width'] * layer_info['input_channel'] - 1)
+                    layer_info['memory'] = layer_info['input_height'] * layer_info['input_width'] * layer_info['input_channel'] * layer_info['output_channel'] * 4 + layer_info['output_channel'] * 4
+                    layer_info['memory'] += layer_info['input_height'] * layer_info['input_width'] * layer_info['input_channel'] * 4 * batch_size
 
             # just partitioning layers into minimum unit partitions
             if self.apply_partition:
@@ -254,8 +264,8 @@ class DAGDataSet:
         self.num_partitions = len(svc_set.partitions)
 
         # create arrival rate table
-        self.max_arrival = 50
-        self.min_arrival = 10
+        self.max_arrival = 1
+        self.min_arrival = 1
 
         if svc_arrival is None:
             svc_arrival = list()
