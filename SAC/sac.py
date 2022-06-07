@@ -4,242 +4,221 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from SAC.model import (Policy, SoftQNetwork, ReplayBuffer)
+from SAC.model import (QNetworkLSTM, SAC_PolicyNetworkLSTM, ReplayBufferLSTM)
 from SAC.util import *
-import argparse, time
-from torch.utils.tensorboard import SummaryWriter
+
+from IPython.display import clear_output
+import matplotlib.pyplot as plt
 
 
-class SAC(object):
-    def __init__(self, dataset, num_states, num_actions, env):
+def SAC(num_states, num_actions, env, dataset):
+    max_episodes = 10000
+    num_actions = num_actions
+    num_states  = num_states
+    
+    parser = argparse.ArgumentParser(description='Train or test neural net motor controller.')
+    parser.add_argument('--train', dest='train', action='store_true', default=True)
+    parser.add_argument('--test', dest='test', action='store_true', default=False)
+    args = parser.parse_args()
+
+    # hyper-parameters for RL training
+    batch_size = 64
+    update_itr = 1
+    hidden_dim = 512
+    AUTO_ENTROPY=True
+    DETERMINISTIC=False
+    rewards = []
+    model_path = 'outputs/model/sac_v2_lstm'
+
+    replay_buffer_size = 10000
+    replay_buffer = ReplayBufferLSTM(replay_buffer_size)
+    sac_trainer = SAC_Trainer(replay_buffer, num_states, num_actions, hidden_dim=hidden_dim, action_range=1.)
+
+    if args.train:
+        # training loop
+        for eps in range(max_episodes):
+            state, last_action = env.reset()
+
+            episode_state = []
+            episode_action = []
+            episode_last_action = []
+            episode_reward = []
+            episode_next_state = []
+            episode_done = []
+            hidden_out = (torch.zeros([1, 1, hidden_dim], dtype=torch.float).cuda(), torch.zeros([1, 1, hidden_dim], dtype=torch.float).cuda())  # initialize hidden state for lstm, (hidden, cell), each is (layer, batch, dim)             
+            
+            for step in range(env.max_step):
+                hidden_in = hidden_out
+                action, hidden_out = sac_trainer.policy_net.get_action(state, last_action, hidden_in, deterministic = DETERMINISTIC)
+                next_state, reward, done, _ = env.step(action)
+
+                if step == 0:
+                    ini_hidden_in = hidden_in
+                    ini_hidden_out = hidden_out
+                episode_state.append(state)
+                episode_action.append(action)
+                episode_last_action.append(last_action)
+                episode_reward.append(reward)
+                episode_next_state.append(next_state)
+                episode_done.append(done) 
+
+                state = next_state
+                last_action = action
+                frame_idx += 1
+                
+                if len(replay_buffer) > batch_size:
+                    for i in range(update_itr):
+                        _ = sac_trainer.update(batch_size, reward_scale=10., auto_entropy=AUTO_ENTROPY, target_entropy=-1.*num_actions)
+
+                if done:
+                    break
+
+            replay_buffer.push(ini_hidden_in, ini_hidden_out, episode_state, episode_action, episode_last_action, episode_reward, episode_next_state, episode_done)
+
+            if eps % 20 == 0 and eps > 0: # plot and model saving interval
+                plot(rewards)
+                np.save('rewards_lstm', rewards)
+                sac_trainer.save_model(model_path)
+            print('Episode: ', eps, '| Episode Reward: ', np.sum(episode_reward))
+            rewards.append(np.sum(episode_reward))
+        sac_trainer.save_model(model_path)
+
+    if args.test:
+        sac_trainer.load_model(model_path)
+        for eps in range(10):
+            state =  env.reset()
+            episode_reward = 0
+            hidden_out = (torch.zeros([1, 1, hidden_dim], dtype=torch.float).cuda(), \
+                torch.zeros([1, 1, hidden_dim], dtype=torch.float).cuda())  # initialize hidden state for lstm, (hidden, cell), each is (layer, batch, dim)
+            
+            for step in range(env.max_step):
+                hidden_in = hidden_out
+                action, hidden_out = sac_trainer.policy_net.get_action(state, last_action, hidden_in, deterministic = DETERMINISTIC)
+                next_state, reward, done, _ = env.step(action)
+
+                last_action = action
+                episode_reward += reward
+                state=next_state
+
+            print('Episode: ', eps, '| Episode Reward: ', episode_reward)
+
+
+def plot(rewards):
+    clear_output(True)
+    plt.figure(figsize=(20,5))
+    plt.plot(rewards)
+    plt.savefig('sac_v2_lstm.png')
+
+
+class SAC_Trainer():
+    def __init__(self, replay_buffer, state_space, action_space, hidden_dim, action_range):
+        
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.dataset = dataset
-        self.num_requests = dataset.num_requests
-        self.num_servers = dataset.num_locals + dataset.num_edges
-        self.num_partitions = dataset.num_partitions
+        self.replay_buffer = replay_buffer
 
-        self.num_states = num_states
-        self.num_actions = num_actions
-        print("num_states:", num_states, "num_actions", num_actions)
+        self.soft_q_net1 = QNetworkLSTM(state_space, action_space, hidden_dim).to(self.device)
+        self.soft_q_net2 = QNetworkLSTM(state_space, action_space, hidden_dim).to(self.device)
+        self.target_soft_q_net1 = QNetworkLSTM(state_space, action_space, hidden_dim).to(self.device)
+        self.target_soft_q_net2 = QNetworkLSTM(state_space, action_space, hidden_dim).to(self.device)
+        self.policy_net = SAC_PolicyNetworkLSTM(state_space, action_space, hidden_dim, action_range).to(self.device)
+        self.log_alpha = torch.zeros(1, dtype=torch.float32, requires_grad=True, device=self.device)
+        print('Soft Q Network (1,2): ', self.soft_q_net1)
+        print('Policy Network: ', self.policy_net)
 
-        parser = argparse.ArgumentParser(description='SAC with 2 Q functions, Online updates')
-        # Common arguments
-        parser.add_argument('--exp-name', type=str, default=os.path.basename(__file__).rstrip(".py"), help='the name of this experiment')
-        parser.add_argument('--gym-id', type=str, default="HopperBulletEnv-v0", help='the id of the gym environment')
-        parser.add_argument('--seed', type=int, default=2, help='seed of the experiment')
-        parser.add_argument('--episode-length', type=int, default=0, help='the maximum length of each episode')
-        parser.add_argument('--total-timesteps', type=int, default=100000, help='total timesteps of the experiments')
-        parser.add_argument('--torch-deterministic', type=lambda x: bool(str2bool(x)), default=True, nargs='?', const=True, help='if toggled, `torch.backends.cudnn.deterministic=False`')
-        parser.add_argument('--cuda', type=lambda x: bool(str2bool(x)), default=True, nargs='?', const=True, help='if toggled, cuda will not be enabled by default')
-        parser.add_argument('--autotune', type=lambda x: bool(str2bool(x)), default=True, nargs='?', const=True, help='automatic tuning of the entropy coefficient.')
+        for target_param, param in zip(self.target_soft_q_net1.parameters(), self.soft_q_net1.parameters()):
+            target_param.data.copy_(param.data)
+        for target_param, param in zip(self.target_soft_q_net2.parameters(), self.soft_q_net2.parameters()):
+            target_param.data.copy_(param.data)
 
-        # Algorithm specific arguments
-        parser.add_argument('--buffer-size', type=int, default=10000+1, help='the replay memory buffer size')
-        parser.add_argument('--learning-starts', type=int, default=5000, help="timestep to start learning")
-        parser.add_argument('--gamma', type=float, default=0.9, help='the discount factor gamma')
-        parser.add_argument('--target-network-frequency', type=int, default=1, help="the timesteps it takes to update the target network") # Denis Yarats' implementation delays this by 2. 
-        parser.add_argument('--max-grad-norm', type=float, default=10.0, help='the maximum norm for the gradient clipping')
-        parser.add_argument('--batch-size', type=int, default=256, help="the batch size of sample from the reply memory") # Worked better in my experiments, still have to do ablation on this. Please remind me
-        parser.add_argument('--tau', type=float, default=0.005, help="target smoothing coefficient (default: 0.005)")
-        parser.add_argument('--alpha', type=float, default=0.2, help="Entropy regularization coefficient.")
+        self.soft_q_criterion1 = nn.MSELoss()
+        self.soft_q_criterion2 = nn.MSELoss()
 
-        # Additional hyper parameters for tweaks
-        ## Separating the learning rate of the policy and value commonly seen: (Original implementation, Denis Yarats)
-        parser.add_argument('--policy-lr', type=float, default=1e-4, help='the learning rate of the policy network optimizer')
-        parser.add_argument('--q-lr', type=float, default=1e-4, help='the learning rate of the Q network network optimizer')
-        parser.add_argument('--policy-frequency', type=int, default=2, help='delays the update of the actor, as per the TD3 paper.')
-        # NN Parameterization
-        parser.add_argument('--weights-init', default='xavier', const='xavier', nargs='?', choices=['xavier', "orthogonal", 'uniform'], help='weight initialization scheme for the neural networks.')
-        parser.add_argument('--bias-init', default='zeros', const='xavier', nargs='?', choices=['zeros', 'uniform'], help='weight initialization scheme for the neural networks.')
-        parser.add_argument('--ent-c', default=-0.25, type=float, help='target entropy of continuous component.')
-        parser.add_argument('--ent-d', default=0.25, type=float, help='target entropy of discrete component.')
+        soft_q_lr = 3e-4
+        policy_lr = 3e-4
+        alpha_lr  = 3e-4
 
-        args = parser.parse_args()
-        if not args.seed:
-            args.seed = int(time.time())
+        self.soft_q_optimizer1 = optim.Adam(self.soft_q_net1.parameters(), lr=soft_q_lr)
+        self.soft_q_optimizer2 = optim.Adam(self.soft_q_net2.parameters(), lr=soft_q_lr)
+        self.policy_optimizer = optim.Adam(self.policy_net.parameters(), lr=policy_lr)
+        self.alpha_optimizer = optim.Adam([self.log_alpha], lr=alpha_lr)
 
-        experiment_name = f"{args.gym_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
-        writer = SummaryWriter(f"runs/{experiment_name}")
-        writer.add_text('hyperparameters', "|param|value|\n|-|-|\n%s" % ('\n'.join([f"|{key}|{value}|" for key, value in vars(args).items()])))
+    
+    def update(self, batch_size, reward_scale=10., auto_entropy=True, target_entropy=-2, gamma=0.99,soft_tau=1e-2):
+        hidden_in, hidden_out, state, action, last_action, reward, next_state, done = self.replay_buffer.sample(batch_size)
+        # print('sample:', state, action,  reward, done)
 
-        self.out_c = self.out_d = self.num_servers
-        self.replay_buffer = ReplayBuffer(args.buffer_size)
-        self.policy_network = Policy(num_states, self.out_c, self.out_d, env).to(self.device)
-        self.q1_network = SoftQNetwork(num_states, self.out_c, self.out_d).to(self.device)
-        self.q2_network = SoftQNetwork(num_states, self.out_c, self.out_d).to(self.device)
-        self.q1_network_target = SoftQNetwork(num_states, self.out_c, self.out_d).to(self.device)
-        self.q2_network_target = SoftQNetwork(num_states, self.out_c, self.out_d).to(self.device)
-        self.q1_network_target.load_state_dict(self.q1_network.state_dict())
-        self.q2_network_target.load_state_dict(self.q2_network.state_dict())
-        values_optimizer = optim.Adam(list(self.q1_network.parameters()) + list(self.q2_network.parameters()), lr=args.q_lr)
-        policy_optimizer = optim.Adam(list(self.policy_network.parameters()), lr=args.policy_lr)
-        loss_fn = nn.MSELoss()
+        state           = torch.FloatTensor(state).to(self.device)
+        next_state      = torch.FloatTensor(next_state).to(self.device)
+        action          = torch.FloatTensor(action).to(self.device)
+        last_action     = torch.FloatTensor(last_action).to(self.device)
+        reward          = torch.FloatTensor(reward).unsqueeze(-1).to(self.device)  # reward is single value, unsqueeze() to add one dim to be [reward] at the sample dim;
+        done            = torch.FloatTensor(np.float32(done)).unsqueeze(-1).to(self.device)
 
-        # Automatic entropy tuning
-        if args.autotune:
-            # target_entropy = -float(out_c)
-            target_entropy = args.ent_c
-            log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
-            alpha = log_alpha.exp().detach().cpu().item()
-            a_optimizer = optim.Adam([log_alpha], lr=1e-4)
-
-            # target_entropy_d = -0.98 * np.log(1/out_d)
-            target_entropy_d = args.ent_d
-            log_alpha_d = torch.zeros(1, requires_grad=True, device=self.device)
-            alpha_d = log_alpha_d.exp().detach().cpu().item()
-            a_d_optimizer = optim.Adam([log_alpha_d], lr=1e-4)
+        predicted_q_value1, _ = self.soft_q_net1(state, action, last_action, hidden_in)
+        predicted_q_value2, _ = self.soft_q_net2(state, action, last_action, hidden_in)
+        new_action, log_prob, z, mean, log_std, _ = self.policy_net.evaluate(state, last_action, hidden_in)
+        new_next_action, next_log_prob, _, _, _, _ = self.policy_net.evaluate(next_state, action, hidden_out)
+        reward = reward_scale * (reward - reward.mean(dim=0)) / (reward.std(dim=0) + 1e-6) # normalize with batch mean and std; plus a small number to prevent numerical problem
+        # Updating alpha wrt entropy
+        # alpha = 0.0  # trade-off between exploration (max entropy) and exploitation (max Q) 
+        if auto_entropy is True:
+            alpha_loss = -(self.log_alpha * (log_prob + target_entropy).detach()).mean()
+            # print('alpha loss: ',alpha_loss)
+            self.alpha_optimizer.zero_grad()
+            alpha_loss.backward()
+            self.alpha_optimizer.step()
+            self.alpha = self.log_alpha.exp()
         else:
-            alpha = args.alpha
-            alpha_d = args.alpha
+            self.alpha = 0.2
+            alpha_loss = 0
 
-        # TRY NOT TO MODIFY: start the game
-        global_episode = 0
-        obs, done = env.reset(), False
-        episode_reward, episode_length = 0., 0
-        average_reward = 0.
+    # Training Q Function
+        predict_target_q1, _ = self.target_soft_q_net1(next_state, new_next_action, action, hidden_out)
+        predict_target_q2, _ = self.target_soft_q_net2(next_state, new_next_action, action, hidden_out)
+        target_q_min = torch.min(predict_target_q1, predict_target_q2) - self.alpha * next_log_prob
+        target_q_value = reward + (1 - done) * gamma * target_q_min # if done==1, only reward
+        q_value_loss1 = self.soft_q_criterion1(predicted_q_value1, target_q_value.detach())  # detach: no gradients for the variable
+        q_value_loss2 = self.soft_q_criterion2(predicted_q_value2, target_q_value.detach())
 
-        for global_step in range(1, args.total_timesteps + 1):
-            # ALGO LOGIC: put action logic here
-            if global_step < args.learning_starts:
-                action_c, action_d = self.policy_network.sample([obs])
-                action = to_gym_action(action_c, action_d)
-            else:
-                action_c, action_d, _, _, _ = self.policy_network.get_action([obs], self.device)
-                action = to_gym_action(action_c, action_d)
 
-            # TRY NOT TO MODIFY: execute the game and log data.
-            next_obs, reward, done, _ = env.next_step(action)
-            self.replay_buffer.put((obs, gym_to_buffer(action), reward, next_obs, done))
-            episode_reward += reward
-            episode_length += 1
-            obs = np.array(next_obs)
+        self.soft_q_optimizer1.zero_grad()
+        q_value_loss1.backward()
+        self.soft_q_optimizer1.step()
+        self.soft_q_optimizer2.zero_grad()
+        q_value_loss2.backward()
+        self.soft_q_optimizer2.step()  
 
-            # ALGO LOGIC: training.
-            if len(self.replay_buffer.buffer) > args.batch_size:  # starts update as soon as there is enough data.
-                s_obs, s_actions, s_rewards, s_next_obses, s_dones = self.replay_buffer.sample(args.batch_size)
-                with torch.no_grad():
-                    next_state_actions_c, next_state_actions_d, next_state_log_pi_c, next_state_log_pi_d, next_state_prob_d = self.policy_network.get_action(s_next_obses, self.device)
-                    qf1_next_target = self.q1_network_target.forward(s_next_obses, next_state_actions_c, self.device)
-                    qf2_next_target = self.q2_network_target.forward(s_next_obses, next_state_actions_c, self.device)
+    # Training Policy Function
+        predict_q1, _= self.soft_q_net1(state, new_action, last_action, hidden_in)
+        predict_q2, _ = self.soft_q_net2(state, new_action, last_action, hidden_in)
+        predicted_new_q_value = torch.min(predict_q1, predict_q2)
+        policy_loss = (self.alpha * log_prob - predicted_new_q_value).mean()
 
-                    min_qf_next_target = next_state_prob_d * (torch.min(qf1_next_target, qf2_next_target) - alpha * next_state_prob_d * next_state_log_pi_c - alpha_d * next_state_log_pi_d)
-                    next_q_value = torch.Tensor(s_rewards).to(self.device) + (1 - torch.Tensor(s_dones).to(self.device)) * args.gamma * (min_qf_next_target.sum(1)).view(-1)
+        self.policy_optimizer.zero_grad()
+        policy_loss.backward()
+        self.policy_optimizer.step()
 
-                s_actions_c, s_actions_d = to_torch_action(s_actions, self.device)
-                qf1_a_values = self.q1_network.forward(s_obs, s_actions_c, self.device).gather(1, s_actions_d.long().view(-1, 1).to(self.device)).squeeze().view(-1)
-                qf2_a_values = self.q2_network.forward(s_obs, s_actions_c, self.device).gather(1, s_actions_d.long().view(-1, 1).to(self.device)).squeeze().view(-1)
-                qf1_loss = loss_fn(qf1_a_values, next_q_value)
-                qf2_loss = loss_fn(qf2_a_values, next_q_value)
-                qf_loss = (qf1_loss + qf2_loss) / 2
+    # Soft update the target value net
+        for target_param, param in zip(self.target_soft_q_net1.parameters(), self.soft_q_net1.parameters()):
+            target_param.data.copy_(  # copy data value into target parameters
+                target_param.data * (1.0 - soft_tau) + param.data * soft_tau
+            )
+        for target_param, param in zip(self.target_soft_q_net2.parameters(), self.soft_q_net2.parameters()):
+            target_param.data.copy_(  # copy data value into target parameters
+                target_param.data * (1.0 - soft_tau) + param.data * soft_tau
+            )
+        return predicted_new_q_value.mean()
 
-                values_optimizer.zero_grad()
-                qf_loss.backward()
-                values_optimizer.step()
+    def save_model(self, path):
+        torch.save(self.soft_q_net1.state_dict(), path+'_q1')
+        torch.save(self.soft_q_net2.state_dict(), path+'_q2')
+        torch.save(self.policy_net.state_dict(), path+'_policy')
 
-                if global_step % args.policy_frequency == 0:  # TD 3 Delayed update support
-                    for _ in range(args.policy_frequency):  # compensate for the delay by doing 'actor_update_interval' instead of 1
-                        actions_c, actions_d, log_pi_c, log_pi_d, prob_d = self.policy_network.get_action(s_obs, self.device)
-                        qf1_pi = self.q1_network.forward(s_obs, actions_c, self.device)
-                        qf2_pi = self.q2_network.forward(s_obs, actions_c, self.device)
-                        min_qf_pi = torch.min(qf1_pi, qf2_pi)
+    def load_model(self, path):
+        self.soft_q_net1.load_state_dict(torch.load(path+'_q1'))
+        self.soft_q_net2.load_state_dict(torch.load(path+'_q2'))
+        self.policy_net.load_state_dict(torch.load(path+'_policy'))
 
-                        policy_loss_d = (prob_d * (alpha_d * log_pi_d - min_qf_pi)).sum(1).mean()
-                        policy_loss_c = (prob_d * (alpha * prob_d * log_pi_c - min_qf_pi)).sum(1).mean()
-                        policy_loss = policy_loss_d + policy_loss_c
-
-                        policy_optimizer.zero_grad()
-                        policy_loss.backward()
-                        policy_optimizer.step()
-
-                        if args.autotune:
-                            with torch.no_grad():
-                                a_c, a_d, lpi_c, lpi_d, p_d = self.policy_network.get_action(s_obs, self.device)
-                            alpha_loss = (-log_alpha * p_d * (p_d * lpi_c + target_entropy)).sum(1).mean()
-                            alpha_d_loss = (-log_alpha_d * p_d * (lpi_d + target_entropy_d)).sum(1).mean()
-
-                            a_optimizer.zero_grad()
-                            alpha_loss.backward()
-                            a_optimizer.step()
-                            alpha = log_alpha.exp().detach().cpu().item()
-
-                            a_d_optimizer.zero_grad()
-                            alpha_d_loss.backward()
-                            a_d_optimizer.step()
-                            alpha_d = log_alpha_d.exp().detach().cpu().item()
-
-                # update the target network
-                if global_step % args.target_network_frequency == 0:
-                    for param, target_param in zip(self.q1_network.parameters(), self.q1_network_target.parameters()):
-                        target_param.data.copy_(args.tau * param.data + (1 - args.tau) * target_param.data)
-                    for param, target_param in zip(self.q2_network.parameters(), self.q2_network_target.parameters()):
-                        target_param.data.copy_(args.tau * param.data + (1 - args.tau) * target_param.data)
-
-            if len(self.replay_buffer.buffer) > args.batch_size and global_step % 100 == 0:
-                writer.add_scalar("losses/soft_q_value_1_loss", qf1_loss.item(), global_step)
-                writer.add_scalar("losses/soft_q_value_2_loss", qf2_loss.item(), global_step)
-                writer.add_scalar("losses/qf_loss", qf_loss.item(), global_step)
-                writer.add_scalar("losses/policy_loss", policy_loss.item(), global_step)
-                writer.add_scalar("losses/alpha", alpha, global_step)
-                # NOTE: additional changes from cleanrl
-                writer.add_scalar("losses/alpha_d", alpha_d, global_step)
-                writer.add_histogram("actions/discrete", action[0]+1, global_step)
-                for i in range(self.num_servers):
-                    writer.add_histogram("actions/continuous_{}".format(i), action[1][i], global_step)
-                writer.add_scalar("debug/ent_bonus", (- alpha * next_state_prob_d * next_state_log_pi_c - alpha_d * next_state_log_pi_d).sum(1).mean().item(), global_step)
-                writer.add_scalar("debug/next_q", next_q_value.mean().item(), global_step)
-                writer.add_scalar("debug/policy_loss_c", policy_loss_c.item(), global_step)
-                writer.add_scalar("debug/policy_loss_d", policy_loss_d.item(), global_step)
-                writer.add_scalar("debug/policy_ent_d", -(prob_d*log_pi_d).sum(1).mean().item(), global_step)
-                writer.add_scalar("debug/mean_q", min_qf_pi.mean().item(), global_step)
-                writer.add_scalar("debug/mean_r", s_rewards.mean(), global_step)
-                writer.add_histogram("debug_q/q_0", min_qf_pi[:, 0].mean().item(), global_step)
-                writer.add_histogram("debug_q/q_1", min_qf_pi[:, 1].mean().item(), global_step)
-                writer.add_histogram("debug_q/q_2", min_qf_pi[:, 2].mean().item(), global_step)
-                writer.add_histogram("debug_pi/pi_0", prob_d[:, 0].mean().item(), global_step)
-                writer.add_histogram("debug_pi/pi_1", prob_d[:, 1].mean().item(), global_step)
-                writer.add_histogram("debug_pi/pi_2", prob_d[:, 2].mean().item(), global_step)
-                if args.autotune:
-                    writer.add_scalar("losses/alpha_loss", alpha_loss.item(), global_step)
-                    writer.add_scalar("losses/alpha_d_loss", alpha_d_loss.item(), global_step)
-
-            if done:
-                global_episode += 1  # Outside the loop already means the epsiode is done
-                writer.add_scalar("charts/episode_reward", episode_reward, global_step)
-                writer.add_scalar("charts/episode_length", episode_length, global_step)
-                # Terminal verbosity
-                average_reward += 10 - reward * 10
-                if global_episode % 10 == 0:
-                    print(f"Episode: {global_episode} Step: {global_step}, Ep. Reward: {average_reward / 10}")
-                    average_reward = 0
-
-                # Reseting what need to be
-                obs, done = env.reset(), False
-                episode_reward, episode_length = 0., 0
-
-        writer.close()
-        env.close()
-
-        # save the policy
-        torch.save(self.policy_network.state_dict(), 'platform.pth')
-
-    def load_weights(self, output, best=False):
-        if output is None:
-            return
-        if best:
-            self.actor.load_state_dict(torch.load('{}/actor_best.pkl'.format(output)))
-            self.critic.load_state_dict(torch.load('{}/critic_best.pkl'.format(output)))
-            self.critic2.load_state_dict(torch.load('{}/critic2_best.pkl'.format(output)))
-        else:
-            self.actor.load_state_dict(torch.load('{}/actor.pkl'.format(output)))
-            self.critic.load_state_dict(torch.load('{}/critic.pkl'.format(output)))
-            self.critic2.load_state_dict(torch.load('{}/critic2.pkl'.format(output)))
-
-    def save_model(self, output, best=False):
-        if best:
-            torch.save(self.actor.state_dict(), '{}/actor_best.pkl'.format(output))
-            torch.save(self.critic.state_dict(), '{}/critic_best.pkl'.format(output))
-            torch.save(self.critic2.state_dict(), '{}/critic2_best.pkl'.format(output))
-        else:
-            torch.save(self.actor.state_dict(), '{}/actor.pkl'.format(output))
-            torch.save(self.critic.state_dict(), '{}/critic.pkl'.format(output))
-            torch.save(self.critic2.state_dict(), '{}/critic2.pkl'.format(output))
+        self.soft_q_net1.eval()
+        self.soft_q_net2.eval()
+        self.policy_net.eval()

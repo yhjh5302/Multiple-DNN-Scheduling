@@ -1,8 +1,9 @@
 import os
-import torch
-from torch.autograd import Variable
+import math
 import argparse
-import numpy as np
+
+import torch
+import torch.nn as nn
 
 USE_CUDA = torch.cuda.is_available()
 FLOAT = torch.cuda.FloatTensor if USE_CUDA else torch.FloatTensor
@@ -60,24 +61,15 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
-def to_gym_action(action_c, action_d, flat_actions=True):
-    # assuming both are torch tensors
-    if flat_actions:
-        ac = action_c.tolist()[0]
-    else:
-        ac = action_c.unsqueeze(-1).tolist()[0]
-    ad = action_d.squeeze().item()
-    return [ad, ac]
+def linear_weights_init(m):
+    if isinstance(m, nn.Linear):
+        stdv = 1. / math.sqrt(m.weight.size(1))
+        m.weight.data.uniform_(-stdv, stdv)
+        if m.bias is not None:
+            m.bias.data.uniform_(-stdv, stdv)
 
-def gym_to_buffer(action, flat_actions=True):
-    ad = action[0]
-    if flat_actions:
-        ac = np.hstack(action[1:])
-    else:
-        ac = action[1]
-    return [ad] + np.array(ac).flatten().tolist()
-
-def to_torch_action(actions, device):
-    ad = torch.Tensor(actions[:, 0]).int().to(device)
-    ac = torch.Tensor(actions[:, 1:]).to(device)
-    return ac, ad
+def conv_weights_init(m):
+    if isinstance(m, nn.Conv2d):
+        torch.nn.init.xavier_uniform_(m.weight.data)
+        if m.bias is not None:
+            torch.nn.init.zeros_(m.bias)

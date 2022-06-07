@@ -22,14 +22,14 @@ class DAGDataSet:
     def create_arrival_rate(self, num_services, minimum, maximum):
         return minimum + (maximum - minimum) * np.random.random(num_services)
 
-    def cnn_partitioning(self, layer_info, num_partitions, min_unit, apply_partition=None):
+    def cnn_partitioning(self, layer_info, num_partitions, min_unit):
         min_unit_partitions = []
         output_data_location = []
         min_unit_start = min_unit_end = 0
         for idx in range(num_partitions):
             partition = deepcopy(layer_info)
             partition['layer_name'] = layer_info['layer_name'] + '_{:d}'.format(idx)
-            partition['layer_idx'] = idx
+            partition['partition_idx'] = idx
             partition['original_layer_name'] = layer_info['layer_name']
             min_unit_start = min_unit_end
             min_unit_end += min_unit
@@ -40,26 +40,27 @@ class DAGDataSet:
             partition['input_data_location'] = [i for i in range(start, end)]
             partition['input_data_size'] = partition['input_height'] * partition['input_width'] * partition['input_channel'] * 4
             partition['workload_size'] *= partition['output_height'] / layer_info['output_height']
+            partition['memory'] *= partition['output_height'] / layer_info['output_height']
             output_data_location += [partition['layer_name'] for _ in range(partition['output_height'])]
             min_unit_partitions.append(partition)
         return min_unit_partitions, output_data_location
 
-    def fc_partitioning(self, layer_info, min_unit):
+    def fc_partitioning(self, layer_info, num_partitions, min_unit):
         min_unit_partitions = []
-        num_partitions = math.floor(layer_info['input_height'] * layer_info['input_width'] * layer_info['input_channel'] / min_unit)
         for idx in range(num_partitions):
             partition = deepcopy(layer_info)
             partition['layer_name'] = layer_info['layer_name'] + '_{:d}'.format(idx)
-            partition['layer_idx'] = idx
+            partition['partition_idx'] = idx
             partition['original_layer_name'] = layer_info['layer_name']
             partition['input_height'] = 1
             partition['input_width'] = 1
             partition['input_channel'] = min_unit
             partition['workload_size'] /= num_partitions
+            partition['memory'] /= num_partitions
             min_unit_partitions.append(partition)
         return min_unit_partitions
 
-    def data_gen(self, net_manager=None, svc_arrival=None, apply_partition=None):
+    def data_gen(self, net_manager=None, svc_arrival=None, apply_partition=None, layer_coarsening=True):
         self.service_info = [deepcopy(config.service_info[i]) for i in range(self.num_services)]
         system_manager = SystemManager()
 
@@ -69,19 +70,84 @@ class DAGDataSet:
             svc = Service(dnn['model_name'], dnn['deadline'])
             
             # workload size calculation
+            batch_size = 16
             for layer_info in dnn['layers']:
                 if layer_info['layer_type'] == 'cnn':
                     layer_info['workload_size'] *= layer_info['output_height'] * layer_info['output_width'] * layer_info['output_channel'] * layer_info['input_channel'] * layer_info['kernel'] * layer_info['kernel']
+                    layer_info['memory'] = layer_info['kernel'] * layer_info['kernel'] * layer_info['input_channel'] * layer_info['output_channel'] * 4 + layer_info['output_channel'] * 4
+                    layer_info['memory'] += layer_info['input_height'] * layer_info['input_width'] * layer_info['input_channel'] * 4 * batch_size
                 elif layer_info['layer_type'] == 'maxpool' or layer_info['layer_type'] == 'avgpool':
                     layer_info['workload_size'] *= layer_info['output_height'] * layer_info['output_width'] * layer_info['output_channel'] * layer_info['kernel'] * layer_info['kernel']
+                    layer_info['memory'] = layer_info['input_height'] * layer_info['input_width'] * layer_info['input_channel'] * 4 * batch_size
                 elif layer_info['layer_type'] == 'fc':
                     layer_info['workload_size'] *= layer_info['output_height'] * layer_info['output_width'] * layer_info['output_channel'] * (2 * layer_info['input_height'] * layer_info['input_width'] * layer_info['input_channel'] - 1)
+                    layer_info['memory'] = layer_info['input_height'] * layer_info['input_width'] * layer_info['input_channel'] * layer_info['output_channel'] * 4 + layer_info['output_channel'] * 4
+                    layer_info['memory'] += layer_info['input_height'] * layer_info['input_width'] * layer_info['input_channel'] * 4 * batch_size
+
+            # layer coarsening
+            if layer_coarsening:
+                pop_lst = []
+                for layer_info in dnn['layers']:
+                    if layer_info['layer_type'] == 'maxpool' or layer_info['layer_type'] == 'avgpool':
+                        pop_lst.append(layer_info)
+                        pred_layer = None
+                        succ_layer = None
+
+                        # 만약 predecessor가 1개면
+                        if len(layer_info['predecessors']) == 1:
+                            for pred_info in dnn['layers']:
+                                if layer_info['layer_name'] in pred_info['successors']:
+                                    pred_layer = pred_info
+                                    layer_info['input_height'] = pred_info['input_height']
+                                    layer_info['input_width'] = pred_info['input_width']
+                                    layer_info['input_channel'] = pred_info['input_channel']
+                                    layer_info['predecessors'] = pred_info['predecessors']
+                                    layer_info['input_data_size'] = pred_info['input_data_size']
+                                    pred_info['workload_size'] += layer_info['workload_size']
+                                    pred_info['memory'] += layer_info['memory']
+                                    pred_info['output_height'] = layer_info['output_height']
+                                    pred_info['output_width'] = layer_info['output_width']
+                                    pred_info['output_channel'] = layer_info['output_channel']
+                                    pred_info['successors'] = layer_info['successors']
+                                    pred_info['output_data_size'] = layer_info['output_data_size']
+                            for succ_info in dnn['layers']:
+                                for idx, l_name in enumerate(succ_info['predecessors']):
+                                    if layer_info['layer_name'] == l_name:
+                                        succ_info['predecessors'][idx] = pred_layer['layer_name']
+                            layer_info['layer_name'] = pred_layer['layer_name']
+
+                        # 만약 successor가 1개면 여기에 취합하고 앞에 애들 이름만 변경.
+                        elif len(layer_info['predecessors']) > 1 and len(layer_info['successors']) == 1:
+                            for succ_info in dnn['layers']:
+                                if layer_info['layer_name'] in succ_info['predecessors']:
+                                    succ_layer = succ_info
+                                    layer_info['output_height'] = succ_info['output_height']
+                                    layer_info['output_width'] = succ_info['output_width']
+                                    layer_info['output_channel'] = succ_info['output_channel']
+                                    layer_info['successors'] = succ_info['successors']
+                                    layer_info['output_data_size'] = succ_info['output_data_size']
+                                    succ_info['workload_size'] += layer_info['workload_size']
+                                    succ_info['memory'] += layer_info['memory']
+                                    succ_info['input_height'] = layer_info['input_height']
+                                    succ_info['input_width'] = layer_info['input_width']
+                                    succ_info['input_channel'] = layer_info['input_channel']
+                                    succ_info['predecessors'] = layer_info['predecessors']
+                                    succ_info['input_data_size'] = layer_info['input_data_size']
+                            for pred_info in dnn['layers']:
+                                for idx, l_name in enumerate(pred_info['successors']):
+                                    if layer_info['layer_name'] == l_name:
+                                        pred_info['successors'][idx] = succ_layer['layer_name']
+                            layer_info['layer_name'] = succ_layer['layer_name']
+
+                for pop_layer in pop_lst:
+                    dnn['layers'].remove(pop_layer)
 
             # just partitioning layers into minimum unit partitions
             if self.apply_partition:
                 partitioned_layers = []
-                for layer_info in dnn['layers']:
-                    if layer_info['layer_type'] in ['cnn','maxpool','avgpool']:
+                for layer_idx, layer_info in enumerate(dnn['layers']):
+                    layer_info['layer_idx'] = layer_idx
+                    if layer_info['layer_type'] in ['cnn','maxpool']:
                         if dnn['model_name'] == 'GoogLeNet':
                             num_partitions = 6
                             min_unit = max(math.floor(layer_info['output_height'] / num_partitions), 1)
@@ -99,16 +165,29 @@ class DAGDataSet:
                         else:
                             min_unit = 1
 
-                        min_unit_partitions, output_data_location = self.cnn_partitioning(layer_info, num_partitions=num_partitions, min_unit=min_unit, apply_partition=apply_partition)
+                        min_unit_partitions, output_data_location = self.cnn_partitioning(layer_info, num_partitions=num_partitions, min_unit=min_unit)
                         partitioned_layers.append({'layer_name':layer_info['layer_name'], 'layer_type':layer_info['layer_type'], 'min_unit_partitions':min_unit_partitions, 'output_data_location':output_data_location})
-                    elif layer_info['layer_type'] == 'fc':
-                        partitioned_layers.append(layer_info)
+                    elif layer_info['layer_type'] in ['fc','avgpool']:
+                        if dnn['model_name'] == 'GoogLeNet':
+                            num_partitions = 6
+                            min_unit = max(math.floor(layer_info['input_height'] * layer_info['input_width'] * layer_info['input_channel'] / num_partitions), 1)
+                        elif dnn['model_name'] == 'AlexNet':
+                            num_partitions = 6
+                            min_unit = max(math.floor(layer_info['input_height'] * layer_info['input_width'] * layer_info['input_channel'] / num_partitions), 1)
+                        elif dnn['model_name'] == 'ResNet-50':
+                            num_partitions = 7
+                            min_unit = max(math.floor(layer_info['input_height'] * layer_info['input_width'] * layer_info['input_channel'] / num_partitions), 1)
+                        else:
+                            min_unit = 256
+
+                        min_unit_partitions = self.fc_partitioning(layer_info, num_partitions=num_partitions, min_unit=min_unit)
+                        partitioned_layers.append({'layer_name':layer_info['layer_name'], 'layer_type':layer_info['layer_type'], 'min_unit_partitions':min_unit_partitions})
                     else:
                         partitioned_layers.append(layer_info)
                 # predecessor recalculation for the minimum unit partitions
                 partitions = []
                 for layer_info in partitioned_layers:
-                    if layer_info['layer_type'] in ['cnn','maxpool','avgpool']:
+                    if layer_info['layer_type'] in ['cnn','maxpool']:
                         for partition in layer_info['min_unit_partitions']:
                             predecessors = []
                             input_data_size = []
@@ -129,21 +208,53 @@ class DAGDataSet:
                             partition['output_data_size'] = []
                             del partition['input_data_location']
                             partitions.append(partition)
-                    elif layer_info['layer_type'] == 'fc':
-                        predecessors = []
-                        input_data_size = []
-                        for pred_layer_name in layer_info['predecessors']:
-                            pred_layer = next(l for l in partitioned_layers if l['layer_name'] == pred_layer_name)
-                            if pred_layer['layer_type'] in ['cnn','maxpool','avgpool']:
+                    elif layer_info['layer_type'] == 'avgpool':
+                        for partition in layer_info['min_unit_partitions']:
+                            predecessors = []
+                            input_data_size = []
+                            for pred_layer_name in partition['predecessors']:
+                                pred_layer = next(l for l in partitioned_layers if l['layer_name'] == pred_layer_name)
                                 for pred_partition in pred_layer['min_unit_partitions']:
                                     predecessors.append(pred_partition['layer_name'])
-                                    input_data_size.append(pred_partition['output_height'] * pred_partition['output_width'] * pred_partition['output_channel'] * 4)
+                                    input_data_size.append(pred_partition['output_channel'] * 4) # ResNet avgpool exception
+                            if len(predecessors) > 0:
+                                partition['predecessors'] = predecessors
+                                partition['input_data_size'] = input_data_size
+                            partition['successors'] = []
+                            partition['output_data_size'] = []
+                            partitions.append(partition)
+                    elif layer_info['layer_type'] == 'fc':
+                        for partition in layer_info['min_unit_partitions']:
+                            predecessors = []
+                            input_data_size = []
+                            if partition['is_first_fc']:
+                                for pred_layer_name in partition['predecessors']:
+                                    pred_layer = next(l for l in partitioned_layers if l['layer_name'] == pred_layer_name)
+                                    if pred_layer['layer_type'] in ['cnn','maxpool']:
+                                        for pred_partition in pred_layer['min_unit_partitions']:
+                                            if pred_partition['partition_idx'] == partition['partition_idx']:
+                                                predecessors.append(pred_partition['layer_name'])
+                                                input_data_size.append(pred_partition['output_height'] * pred_partition['output_width'] * pred_partition['output_channel'] * 4)
+                                    else:
+                                        break
+                                if len(predecessors) > 0:
+                                    partition['predecessors'] = predecessors
+                                    partition['input_data_size'] = input_data_size
+                                partition['successors'] = []
+                                partition['output_data_size'] = []
+                                partitions.append(partition)
                             else:
-                                break
-                        if len(predecessors) > 0:
-                            layer_info['predecessors'] = predecessors
-                            layer_info['input_data_size'] = input_data_size
-                        partitions.append(layer_info)
+                                for pred_layer_name in partition['predecessors']:
+                                    pred_layer = next(l for l in partitioned_layers if l['layer_name'] == pred_layer_name)
+                                    for pred_partition in pred_layer['min_unit_partitions']:
+                                        predecessors.append(pred_partition['layer_name'])
+                                        input_data_size.append(pred_partition['output_height'] * pred_partition['output_width'] * pred_partition['output_channel'] * 4)
+                                if len(predecessors) > 0:
+                                    partition['predecessors'] = predecessors
+                                    partition['input_data_size'] = input_data_size
+                                partition['successors'] = []
+                                partition['output_data_size'] = []
+                                partitions.append(partition)
                     else:
                         partitions.append(layer_info)
                 # successor recalculation for the minimum unit partitions
@@ -154,13 +265,18 @@ class DAGDataSet:
                         pred_partition['output_data_size'].append(partition['input_data_size'][ith])
                 # create partitions
                 for partition in partitions:
+                    print(partition)
                     if len(partition['predecessors']) == 0 and len(partition['successors']) == 0:
                         print(partition['layer_name'], 'has no predecessor and successor node. so deleted from DAG')
                         continue
-                    svc.partitions.append(Partition(service=svc, **partition))
+                    svc.partitions.append(Partition(svc_set=svc_set, service=svc, **partition))
+                input()
             else:
-                for layer_info in dnn['layers']:
-                    svc.partitions.append(Partition(service=svc, **layer_info))
+                for layer_idx, layer_info in enumerate(dnn['layers']):
+                    print(layer_info)
+                    layer_info['layer_idx'] = layer_idx
+                    svc.partitions.append(Partition(svc_set=svc_set, service=svc, **layer_info))
+                input()
 
             svc_set.add_services(svc)
 
@@ -208,8 +324,8 @@ class DAGDataSet:
 
 
         # create arrival rate table
-        self.max_arrival = 1
-        self.min_arrival = 1
+        self.max_arrival = 30
+        self.min_arrival = 30
 
         if svc_arrival is None:
             svc_arrival = list()
@@ -282,6 +398,8 @@ class DAGDataSet:
             for partition in svc.partitions:
                 system_manager.calc_rank_ready_average(partition)
 
+        system_manager.calculate_schedule()
+
         return svc_set, system_manager
 
     def horizontal_partitioning(self):
@@ -296,62 +414,53 @@ class DAGDataSet:
 
             horizontal_partition = dict()
             if self.service_info[svc.id]['model_name'] == 'GoogLeNet':
-                num_cnn_partitions = 6
-                for i in range(num_cnn_partitions + 1):
+                num_neuron_partitions = 6
+                for i in range(num_neuron_partitions):
                     horizontal_partition[i] = []
                 for l in self.service_info[svc.id]['layers']:
-                    p_lst = [p.layer_name for p in svc.partitions if (p.layer_type in ['cnn','maxpool','avgpool'] and p.original_layer_name == l['layer_name']) or (p.layer_type == 'fc' and p.layer_name == l['layer_name'])]
-                    if l['layer_type'] in ['cnn','maxpool','avgpool']:
-                        for i in range(num_cnn_partitions):
-                            start = math.floor(len(p_lst) / num_cnn_partitions * i)
-                            end = math.floor(len(p_lst) / num_cnn_partitions * (i + 1))
-                            for j in range(start, end):
-                                horizontal_partition[i].append(l['layer_name']+'_'+str(j))
-                    elif l['layer_type'] == 'fc':
-                        horizontal_partition[num_cnn_partitions].extend(p_lst)
+                    p_lst = [p.layer_name for p in svc.partitions if p.original_layer_name == l['layer_name']]
+                    for i in range(num_neuron_partitions):
+                        start = math.floor(len(p_lst) / num_neuron_partitions * i)
+                        end = math.floor(len(p_lst) / num_neuron_partitions * (i + 1))
+                        for j in range(start, end):
+                            horizontal_partition[i].append(l['layer_name']+'_'+str(j))
 
                 for p_id in range(num_partitions):
-                    for i in range(num_cnn_partitions + 1):
+                    for i in range(num_neuron_partitions):
                         if svc.partitions[p_id].layer_name in horizontal_partition[i]:
                             cg[p_id] = i
 
             elif self.service_info[svc.id]['model_name'] == 'AlexNet':
-                num_cnn_partitions = 6
-                for i in range(num_cnn_partitions + 1):
+                num_neuron_partitions = 6
+                for i in range(num_neuron_partitions):
                     horizontal_partition[i] = []
                 for l in self.service_info[svc.id]['layers']:
-                    p_lst = [p.layer_name for p in svc.partitions if (p.layer_type in ['cnn','maxpool','avgpool'] and p.original_layer_name == l['layer_name']) or (p.layer_type == 'fc' and p.layer_name == l['layer_name'])]
-                    if l['layer_type'] in ['cnn','maxpool','avgpool']:
-                        for i in range(num_cnn_partitions):
-                            start = math.floor(len(p_lst) / num_cnn_partitions * i)
-                            end = math.floor(len(p_lst) / num_cnn_partitions * (i + 1))
-                            for j in range(start, end):
-                                horizontal_partition[i].append(l['layer_name']+'_'+str(j))
-                    elif l['layer_type'] == 'fc':
-                        horizontal_partition[num_cnn_partitions].extend(p_lst)
+                    p_lst = [p.layer_name for p in svc.partitions if p.original_layer_name == l['layer_name']]
+                    for i in range(num_neuron_partitions):
+                        start = math.floor(len(p_lst) / num_neuron_partitions * i)
+                        end = math.floor(len(p_lst) / num_neuron_partitions * (i + 1))
+                        for j in range(start, end):
+                            horizontal_partition[i].append(l['layer_name']+'_'+str(j))
 
                 for p_id in range(num_partitions):
-                    for i in range(num_cnn_partitions + 1):
+                    for i in range(num_neuron_partitions):
                         if svc.partitions[p_id].layer_name in horizontal_partition[i]:
                             cg[p_id] = i
 
             elif self.service_info[svc.id]['model_name'] == 'ResNet-50':
-                num_cnn_partitions = 7
-                for i in range(num_cnn_partitions + 1):
+                num_neuron_partitions = 7
+                for i in range(num_neuron_partitions):
                     horizontal_partition[i] = []
                 for l in self.service_info[svc.id]['layers']:
-                    p_lst = [p.layer_name for p in svc.partitions if (p.layer_type in ['cnn','maxpool','avgpool'] and p.original_layer_name == l['layer_name']) or (p.layer_type == 'fc' and p.layer_name == l['layer_name'])]
-                    if l['layer_type'] in ['cnn','maxpool','avgpool']:
-                        for i in range(num_cnn_partitions):
-                            start = math.floor(len(p_lst) / num_cnn_partitions * i)
-                            end = math.floor(len(p_lst) / num_cnn_partitions * (i + 1))
-                            for j in range(start, end):
-                                horizontal_partition[i].append(l['layer_name']+'_'+str(j))
-                    elif l['layer_type'] == 'fc':
-                        horizontal_partition[num_cnn_partitions].extend(p_lst)
+                    p_lst = [p.layer_name for p in svc.partitions if p.original_layer_name == l['layer_name']]
+                    for i in range(num_neuron_partitions):
+                        start = math.floor(len(p_lst) / num_neuron_partitions * i)
+                        end = math.floor(len(p_lst) / num_neuron_partitions * (i + 1))
+                        for j in range(start, end):
+                            horizontal_partition[i].append(l['layer_name']+'_'+str(j))
 
                 for p_id in range(num_partitions):
-                    for i in range(num_cnn_partitions + 1):
+                    for i in range(num_neuron_partitions):
                         if svc.partitions[p_id].layer_name in horizontal_partition[i]:
                             cg[p_id] = i
             coarsened_graph.append(cg)

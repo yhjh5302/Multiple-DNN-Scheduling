@@ -48,18 +48,15 @@ class PSOGA:
         return w
 
     def generate_random_solutions(self, step=2):
-        # return np.full(shape=(self.num_particles, self.num_timeslots, self.num_partitions), fill_value=self.server_lst[-1])
+        return np.full(shape=(self.num_particles, self.num_timeslots, self.num_partitions), fill_value=self.server_lst[-1])
         # return np.array([[self.dataset.partition_device_map for _ in range(self.num_timeslots)] for _ in range(0, self.num_particles)])
         random_solutions = np.zeros((self.num_particles, self.num_timeslots, self.num_partitions))
-        start = 0
-        end = step
-        if end > 0:
-            random_solutions[start:end,:,:] = np.array([[self.dataset.partition_device_map for _ in range(self.num_timeslots)] for _ in range(start, end)])
+        start = end = 0
         for i in self.server_lst:
             start = end
             end += step
             random_solutions[start:end,:,:] = np.full(shape=(end-start, self.num_timeslots, self.num_partitions), fill_value=i)
-        random_solutions[end:self.num_particles,:,:] = np.random.choice([0]+self.server_lst, size=(self.num_particles-end, self.num_timeslots, self.num_partitions))
+        random_solutions[end:self.num_particles,:,:] = np.random.choice(self.server_lst, size=(self.num_particles-end, self.num_timeslots, self.num_partitions))
         return random_solutions
     
     def local_search_multiprocessing(self, action):
@@ -72,7 +69,7 @@ class PSOGA:
                 # local search x: deployed_server
                 self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(action[t]))
                 max_reward = self.system_manager.get_reward()
-                for s_id in [0]+self.server_lst:
+                for s_id in self.server_lst:
                     if s_id == action[t,j]:
                         continue
                     if s_id == 0:
@@ -140,7 +137,7 @@ class PSOGA:
                 r = self.system_manager.get_reward()
                 print("\033[31mEarly exit loop {}: {:.5f} sec".format(i + 1, time.time() - start))
                 print(g_t[0])
-                print("t:", sum(t), t)
+                print("t:", max(t), t)
                 print("e:", sum(e), e)
                 print("r:", r, "\033[0m")
                 return (np.array([self.get_uncoarsened_x(g_t[t]) for t in range(self.num_timeslots)]), eval_lst, time.time() - start)
@@ -153,7 +150,7 @@ class PSOGA:
                 e = [s.energy_consumption() for s in list(self.system_manager.request.values()) + list(self.system_manager.local.values()) + list(self.system_manager.edge.values())]
                 print("\033[31mEarly exit loop {}: {:.5f} sec".format(i + 1, time.time() - start))
                 print(g_t[0])
-                print("t:", sum(t), t)
+                print("t:", max(t), t)
                 print("e:", sum(e), e, "\033[0m")
 
             # test
@@ -175,7 +172,7 @@ class PSOGA:
                     total_energy.append(sum([s.energy_consumption() for s in list(self.system_manager.request.values()) + list(self.system_manager.local.values()) + list(self.system_manager.edge.values())]))
                     total_reward.append(self.system_manager.get_reward())
                     self.system_manager.after_timeslot(deployed_server=self.get_uncoarsened_x(g_t[t]), timeslot=t)
-                print("mean t: {:.5f}".format(np.sum(total_time, axis=None)), np.sum(np.array(total_time), axis=0) / self.dataset.num_timeslots)
+                print("mean t: {:.5f}".format(np.max(total_time, axis=None)), np.max(np.array(total_time), axis=0))
                 print("mean e: {:.5f}".format(sum(total_energy) / self.num_timeslots))
                 print("mean r: {:.5f}".format(sum(total_reward) / self.num_timeslots))
                 print("avg took: {:.5f} sec".format((end - start) / (i + 1)))
@@ -260,7 +257,7 @@ class PSOGA:
             mutation_point = np.random.randint(low=0, high=self.num_partitions)
 
             # mutate x: deployed_server
-            another_s_id = np.random.choice([0]+self.server_lst)
+            another_s_id = np.random.choice(self.server_lst)
             x[mutation_point] = another_s_id
             v_t[t,:self.num_partitions] = x
         return v_t
@@ -288,7 +285,7 @@ class PSOGA:
 
     # convert invalid action to valid action, deployed server action.
     def deployed_server_reparation(self, x):
-        server_lst = [0] + self.server_lst
+        server_lst = self.server_lst
         cloud_lst = list(self.system_manager.cloud.keys())
         # request device constraint
         for c_id, s_id in enumerate(x):
@@ -364,18 +361,15 @@ class Genetic(PSOGA):
         self.cross_over_ratio = cross_over_ratio
 
     def generate_random_solutions(self, step=2):
-        # return np.full(shape=(self.num_solutions, self.num_timeslots, self.num_partitions), fill_value=self.server_lst[-1])
+        return np.full(shape=(self.num_solutions, self.num_timeslots, self.num_partitions), fill_value=self.server_lst[-1])
         # return np.array([[self.dataset.partition_device_map for _ in range(self.num_timeslots)] for _ in range(0, self.num_solutions)])
         random_solutions = np.zeros((self.num_solutions, self.num_timeslots, self.num_partitions))
-        start = 0
-        end = step
-        if end > 0:
-            random_solutions[start:end,:,:] = np.array([[self.dataset.partition_device_map for _ in range(self.num_timeslots)] for _ in range(start, end)])
+        start = end = 0
         for i in self.server_lst:
             start = end
             end += step
             random_solutions[start:end,:,:] = np.full(shape=(end-start, self.num_timeslots, self.num_partitions), fill_value=i)
-        random_solutions[end:self.num_solutions,:,:] = np.random.choice([0]+self.server_lst, size=(self.num_solutions-end, self.num_timeslots, self.num_partitions))
+        random_solutions[end:self.num_solutions,:,:] = np.random.choice(self.server_lst, size=(self.num_solutions-end, self.num_timeslots, self.num_partitions))
         return random_solutions
 
     def run_algo(self, loop, verbose=True, local_search=True, random_solution=None):
@@ -416,7 +410,7 @@ class Genetic(PSOGA):
                 r = self.system_manager.get_reward()
                 print("\033[31mEarly exit loop {}: {:.5f} sec".format(i + 1, time.time() - start))
                 print(p_t[0,0])
-                print("t:", sum(t), t)
+                print("t:", max(t), t)
                 print("e:", sum(e), e)
                 print("r:", r, "\033[0m")
                 return (np.array([self.get_uncoarsened_x(p_t[0,t]) for t in range(self.num_timeslots)]), eval_lst, time.time() - start)
@@ -429,7 +423,7 @@ class Genetic(PSOGA):
                 e = [s.energy_consumption() for s in list(self.system_manager.request.values()) + list(self.system_manager.local.values()) + list(self.system_manager.edge.values())]
                 print("\033[31mEarly exit loop {}: {:.5f} sec".format(i + 1, time.time() - start))
                 print(p_t[0,0])
-                print("t:", sum(t), t)
+                print("t:", max(t), t)
                 print("e:", sum(e), e, "\033[0m")
 
             # test
@@ -454,7 +448,7 @@ class Genetic(PSOGA):
                     total_energy.append(sum([s.energy_consumption() for s in list(self.system_manager.request.values()) + list(self.system_manager.local.values()) + list(self.system_manager.edge.values())]))
                     total_reward.append(self.system_manager.get_reward())
                     self.system_manager.after_timeslot(deployed_server=self.get_uncoarsened_x(p_t[0,t]), timeslot=t)
-                print("mean t: {:.5f}".format(np.sum(total_time, axis=None)), np.sum(np.array(total_time), axis=0) / self.dataset.num_timeslots)
+                print("mean t: {:.5f}".format(np.max(total_time, axis=None)), np.max(np.array(total_time), axis=0))
                 print("mean e: {:.5f}".format(sum(total_energy) / self.num_timeslots))
                 print("mean r: {:.5f}".format(sum(total_reward) / self.num_timeslots))
                 print("avg took: {:.5f} sec".format((end - start) / (i + 1)))
@@ -537,7 +531,7 @@ class Genetic(PSOGA):
             mutation_point = np.random.randint(low=0, high=self.num_partitions)
 
             # mutate x: deployed_server
-            another_s_id = np.random.choice([0]+self.server_lst)
+            another_s_id = np.random.choice(self.server_lst)
             action[t,mutation_point] = another_s_id
         return action.reshape(1,self.num_timeslots,-1)
 
@@ -564,44 +558,36 @@ class HEFT:
         self.system_manager = dataset.system_manager
         self.num_servers = dataset.num_servers
         self.num_timeslots = dataset.num_timeslots
-
-        self.graph = [cg for cg in dataset.coarsened_graph]
-        self.num_partitions = sum([len(cg) for cg in dataset.coarsened_graph])
+        self.num_partitions = len(self.dataset.svc_set.partitions)
 
         self.server_lst = list(self.system_manager.local.keys()) + list(self.system_manager.edge.keys())
 
     def run_algo(self):
         self.system_manager.rank_u = np.zeros(self.num_partitions)
-        for svc in self.dataset.svc_set.services:
-            for partition in svc.partitions:
-                self.system_manager.calc_rank_u_average(partition)
+        for partition in self.system_manager.service_set.partitions:
+            if len(partition.predecessors) == 0:
+                self.system_manager.calc_rank_u_total_average(partition)
         x = np.full(shape=(self.num_timeslots, self.num_partitions), fill_value=self.system_manager.cloud_id, dtype=np.int32)
-        y = np.array([np.array(sorted(zip(self.system_manager.rank_u, np.arange(self.num_partitions)), reverse=False), dtype=np.int32)[:,1] for _ in range(self.num_timeslots)])
-
-        server_lst = list(self.system_manager.local.keys()) + list(self.system_manager.edge.keys())
+        y = np.array([np.array(sorted(zip(self.system_manager.rank_u, np.arange(self.num_partitions)), reverse=True), dtype=np.int32)[:,1] for _ in range(self.num_timeslots)])
 
         self.system_manager.init_env()
         for t in range(self.num_timeslots):
-            Tr = Tf = None
             for _, top_rank in enumerate(y[t]):
                 # initialize the earliest finish time of the task
                 earliest_finish_time = np.inf
                 # for all available server, find earliest finish time server
-                for s_id in server_lst:
+                for s_id in self.server_lst:
                     temp_x = x[t,top_rank]
                     x[t,top_rank] = s_id
-                    if self.system_manager.constraint_chk(deployed_server=x[t], execution_order=y[t], s_id=s_id):
+                    if False not in self.system_manager.constraint_chk(deployed_server=x[t], execution_order=y[t]):
                         self.system_manager.set_env(deployed_server=x[t], execution_order=y[t])
-                        finish_time, temp_Tr, temp_Tf = self.system_manager.get_completion_time(top_rank, Tr, Tf)
+                        finish_time = self.system_manager.get_completion_time_partition(top_rank)
                         if finish_time < earliest_finish_time:
                             earliest_finish_time = finish_time
                         else:
                             x[t,top_rank] = temp_x
                     else:
                         x[t,top_rank] = temp_x
-                Tr = temp_Tr
-                Tf = temp_Tf
-            print("x[t]", x[t])
             self.system_manager.after_timeslot(deployed_server=x[t], execution_order=y[t], timeslot=t)
         return np.array(x, dtype=np.int32), np.array(y, dtype=np.int32)
 
@@ -631,9 +617,80 @@ class Greedy:
         return np.concatenate(result, axis=None)
 
     def run_algo(self):
+        self.system_manager.rank_u = np.zeros(self.num_partitions)
+        for partition in self.system_manager.service_set.partitions:
+            if len(partition.predecessors) == 0:
+                self.system_manager.calc_rank_u_total_average(partition)
         x = np.full(shape=(self.num_timeslots, self.num_partitions), fill_value=self.system_manager.cloud_id, dtype=np.int32)
+        y = np.array([np.array(sorted(zip(self.system_manager.rank_u, np.arange(self.num_partitions)), reverse=True), dtype=np.int32)[:,1] for _ in range(self.num_timeslots)])
 
-        server_lst = self.server_lst
+        self.system_manager.init_env()
+        for t in range(self.num_timeslots):
+            for _, top_rank in enumerate(y[t]):
+                # initialize the earliest finish time of the task
+                minimum_latency = np.inf
+                # for all available server, find earliest finish time server
+                for s_id in self.server_lst:
+                    temp_x = x[t,top_rank]
+                    x[t,top_rank] = s_id
+                    if False not in self.system_manager.constraint_chk(deployed_server=x[t], execution_order=y[t]):
+                        self.system_manager.set_env(deployed_server=x[t], execution_order=y[t])
+                        latency = self.system_manager.get_completion_time_partition(top_rank)
+                        if latency < minimum_latency:
+                            minimum_latency = latency
+                        else:
+                            x[t,top_rank] = temp_x
+                    else:
+                        x[t,top_rank] = temp_x
+            self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(x[t]))
+            last_latency = max(self.system_manager.total_time_dp())
+            loop = 0
+            while(True):
+                for _, top_rank in enumerate(reversed(y[t])):
+                    # initialize the earliest finish time of the task
+                    minimum_latency = np.inf
+                    # for all available server, find earliest finish time server
+                    for s_id in self.server_lst:
+                        temp_x = x[t,top_rank]
+                        x[t,top_rank] = s_id
+                        if False not in self.system_manager.constraint_chk(deployed_server=x[t], execution_order=y[t]):
+                            self.system_manager.set_env(deployed_server=x[t], execution_order=y[t])
+                            latency = max(self.system_manager.total_time_dp())
+                            if latency < minimum_latency:
+                                minimum_latency = latency
+                            else:
+                                x[t,top_rank] = temp_x
+                        else:
+                            x[t,top_rank] = temp_x
+                for _, top_rank in enumerate(y[t]):
+                    # initialize the earliest finish time of the task
+                    minimum_latency = np.inf
+                    # for all available server, find earliest finish time server
+                    for s_id in self.server_lst:
+                        temp_x = x[t,top_rank]
+                        x[t,top_rank] = s_id
+                        if False not in self.system_manager.constraint_chk(deployed_server=x[t], execution_order=y[t]):
+                            self.system_manager.set_env(deployed_server=x[t], execution_order=y[t])
+                            latency = max(self.system_manager.total_time_dp())
+                            if latency < minimum_latency:
+                                minimum_latency = latency
+                            else:
+                                x[t,top_rank] = temp_x
+                        else:
+                            x[t,top_rank] = temp_x
+                self.system_manager.set_env(deployed_server=x[t], execution_order=y[t])
+                cur_latency = max(self.system_manager.total_time_dp())
+                loop += 1
+                if last_latency > cur_latency:
+                    last_latency = cur_latency
+                else:
+                    break
+            print("loop", loop)
+            self.system_manager.after_timeslot(deployed_server=x[t], execution_order=y[t], timeslot=t)
+        return np.array(x, dtype=np.int32), np.array(y, dtype=np.int32)
+
+    def run_algo_piecewise(self):
+        x = np.full(shape=(self.num_timeslots, self.num_partitions), fill_value=self.system_manager.cloud_id, dtype=np.int32)
 
         self.system_manager.init_env()
         for t in range(self.num_timeslots):
@@ -641,52 +698,67 @@ class Greedy:
                 # initialize the earliest finish time of the task
                 minimum_latency = np.inf
                 # for all available server, find earliest finish time server
-                for s_id in [0] + self.server_lst:
+                for s_id in self.server_lst:
                     if s_id == 0:
                         s_id = self.dataset.partition_device_map[p_id]
                     temp_x = x[t,p_id]
                     x[t,p_id] = s_id
                     if self.system_manager.constraint_chk(deployed_server=self.get_uncoarsened_x(x[t]), s_id=s_id):
                         self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(x[t]))
-                        latency = sum(self.system_manager.total_time_dp())
+                        latency = max(self.system_manager.total_time_dp())
                         if latency < minimum_latency:
                             minimum_latency = latency
                         else:
                             x[t,p_id] = temp_x
                     else:
                         x[t,p_id] = temp_x
-            print("x[t]", x[t])
-            self.system_manager.after_timeslot(deployed_server=self.get_uncoarsened_x(x[t]), timeslot=t)
-        return np.array([self.get_uncoarsened_x(x[t]) for t in range(self.num_timeslots)])
-
-        self.system_manager.init_env()
-        for t in range(self.num_timeslots):
-            start = end = 0
-            for svc in self.dataset.svc_set.services:
-                start = end
-                end += len(self.graph[svc.id])
-                for p_id in reversed(self.graph[svc.id]):
-                    # initialize the earliest finish time of the task
-                    minimum_latency = np.inf
-                    # for all available server, find earliest finish time server
-                    for s_id in server_lst:
-                        temp_x = x[t,start+p_id]
-                        x[t,start+p_id] = s_id
-                        if self.system_manager.constraint_chk(deployed_server=self.get_uncoarsened_x(x[t]), s_id=s_id):
-                            self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(x[t]))
-                            p_lst = [svc.partitions[real_p] for real_p in np.where(self.dataset.coarsened_graph[svc.id] == p_id)[0]]
-                            self.system_manager.total_time_dp()
-                            latency =  max([self.system_manager.finish_time[p.id] for p in p_lst])
-                            # print(p_id,"latency",latency, s_id, self.system_manager.finish_time, [self.system_manager.finish_time[p.id] for p in p_lst])
-                            # input()
-                            if latency < minimum_latency:
-                                minimum_latency = latency
-                            else:
-                                x[t,start+p_id] = temp_x
-                        else:
-                            x[t,start+p_id] = temp_x
-                print("x[t]", x[t])
-                input()
-            print("x[t]", x[t])
+            # self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(x[t]))
+            # last_latency = max(self.system_manager.total_time_dp())
+            # loop = 0
+            # while(True):
+            #     for p_id in reversed(range(self.num_partitions)):
+            #         # initialize the earliest finish time of the task
+            #         minimum_latency = np.inf
+            #         # for all available server, find earliest finish time server
+            #         for s_id in self.server_lst:
+            #             if s_id == 0:
+            #                 s_id = self.dataset.partition_device_map[p_id]
+            #             temp_x = x[t,p_id]
+            #             x[t,p_id] = s_id
+            #             if self.system_manager.constraint_chk(deployed_server=self.get_uncoarsened_x(x[t]), s_id=s_id):
+            #                 self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(x[t]))
+            #                 latency = max(self.system_manager.total_time_dp())
+            #                 if latency < minimum_latency:
+            #                     minimum_latency = latency
+            #                 else:
+            #                     x[t,p_id] = temp_x
+            #             else:
+            #                 x[t,p_id] = temp_x
+            #     for p_id in range(self.num_partitions):
+            #         # initialize the earliest finish time of the task
+            #         minimum_latency = np.inf
+            #         # for all available server, find earliest finish time server
+            #         for s_id in self.server_lst:
+            #             if s_id == 0:
+            #                 s_id = self.dataset.partition_device_map[p_id]
+            #             temp_x = x[t,p_id]
+            #             x[t,p_id] = s_id
+            #             if self.system_manager.constraint_chk(deployed_server=self.get_uncoarsened_x(x[t]), s_id=s_id):
+            #                 self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(x[t]))
+            #                 latency = max(self.system_manager.total_time_dp())
+            #                 if latency < minimum_latency:
+            #                     minimum_latency = latency
+            #                 else:
+            #                     x[t,p_id] = temp_x
+            #             else:
+            #                 x[t,p_id] = temp_x
+            #     self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(x[t]))
+            #     cur_latency = max(self.system_manager.total_time_dp())
+            #     loop += 1
+            #     if last_latency > cur_latency:
+            #         last_latency = cur_latency
+            #     else:
+            #         break
+            # print("loop", loop)
             self.system_manager.after_timeslot(deployed_server=self.get_uncoarsened_x(x[t]), timeslot=t)
         return np.array([self.get_uncoarsened_x(x[t]) for t in range(self.num_timeslots)])
