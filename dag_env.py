@@ -9,12 +9,14 @@ from dag_data_generator import *
 class DAGEnv():
     def __init__(self, dataset, max_episode):
         self.dataset = dataset
+        self.num_layers = len(np.unique(self.dataset.partition_layer_map))
+        print("self.num_layers", self.num_layers)
         self.num_partitions = self.dataset.num_partitions
         self.num_requests = self.dataset.num_requests
         self.server_lst = self.dataset.server_lst
         self.num_servers = len(self.server_lst)
-        self.deployed_server = np.copy(self.dataset.partition_device_map)
-        self.execution_order = self.dataset.system_maanger.EFT_schedule
+        self.deployed_server = np.full(self.num_partitions, fill_value=self.dataset.system_manager.cloud_id, dtype=np.int32)
+        self.execution_order = self.dataset.system_manager.EFT_schedule
 
         self.cur_episode = 0
         self.max_episode = max_episode
@@ -24,52 +26,36 @@ class DAGEnv():
         self.max_step = self.num_partitions
 
         self.action = np.zeros(self.num_servers)
-        self.state = self.reset()
+        self.state = self.reset()[0]
 
         self.agent = SAC(num_states=len(self.state), num_actions=len(self.action), env=self, dataset=dataset)
 
     def reset(self):
         self.cur_timeslot = 0
         self.cur_step = 0
-        self.cur_svc = self.dataset.partition_device_map[self.cur_step]
         self.deployed_server = np.full(self.num_partitions, fill_value=self.dataset.system_manager.cloud_id, dtype=np.int32)
         self.dataset.system_manager.init_env()
-        return self.get_state(0, np.ones(self.num_servers), p_id=-1, step=-1)[0]
-    
-    def get_uncoarsened_action(self, x, dtype):
-        result = []
-        start = end = 0
-        for svc in self.dataset.svc_set.services:
-            uncoarsened_x = np.zeros_like(self.dataset.coarsened_graph[svc.id], dtype=dtype)
-            start = end
-            end += len(self.graph[svc.id])
-            for i, x_i in enumerate(x[start:end]):
-                uncoarsened_x[np.where(self.dataset.coarsened_graph[svc.id]==self.graph[svc.id][i])] = x_i
-            result.append(uncoarsened_x)
-        return np.concatenate(result, axis=None)
+        return self.get_state(self.num_servers-1, step=-1)[0], np.zeros(self.num_servers)
 
-    def get_state(self, x, y, p_id, step):
-        if p_id >= 0:
-            self.deployed_server[p_id] = self.server_lst[x]
+    def get_state(self, x, step):
+        if step >= 0:
+            self.deployed_server[step] = self.server_lst[x]
         constraint_chk = self.dataset.system_manager.constraint_chk(deployed_server=self.deployed_server, execution_order=self.execution_order)
 
-        if step + 1 < self.max_partition:
+        if step + 1 < self.max_step:
             reward = 0
-            next_p_id = p_id + 1
+            next_step = step + 1
         else:
             reward = max(-max(self.dataset.system_manager.total_time()), -10) / 10 + 1
-            next_p_id = p_id + 1
-            if p_id + 1 == self.max_partition:
-                next_p_id = 0
+            next_step = 0
         state = []
         state.extend([sum(self.execution_order[np.where(self.deployed_server==s.id)]) for s in list(self.dataset.system_manager.local.values())+list(self.dataset.system_manager.edge.values())]) # remain resource
         state.extend([sum(s.deployed_partition_memory.values()) / s.memory for s in list(self.dataset.system_manager.local.values())+list(self.dataset.system_manager.edge.values())]) # server memory
-        state.extend([self.dataset.partition_workload[next_p_id] * s.computing_intensity[self.cur_svc] / s.computing_frequency for s in list(self.dataset.system_manager.local.values())+list(self.dataset.system_manager.edge.values())]) # partition computation time
-        state.extend([self.dataset.partition_memory[next_p_id] / s.memory for s in list(self.dataset.system_manager.local.values())+list(self.dataset.system_manager.edge.values())]) # partition memory
+        state.extend([self.dataset.partition_workload_map[next_step] * s.computing_intensity[self.dataset.partition_service_map[next_step]] / s.computing_frequency for s in list(self.dataset.system_manager.local.values())+list(self.dataset.system_manager.edge.values())]) # partition computation time
+        state.extend([self.dataset.partition_memory_map[next_step] / s.memory for s in list(self.dataset.system_manager.local.values())+list(self.dataset.system_manager.edge.values())]) # partition memory
         for s in self.deployed_server:
             state.extend([1 if idx == s - self.num_requests else 0 for idx in range(self.num_servers)])
-        state.extend([0 if self.deployed_server[idx] < self.num_requests else r for idx, r in enumerate(self.resource_convert(self.deployed_server, self.execution_order))])
-        state.extend([1 if idx == next_p_id else 0 for idx in range(self.max_partition)])
+        state.extend([1 if idx == next_step else 0 for idx in range(self.max_step)])
         # print("step", step, "p_id", p_id, "next_p_id", next_p_id, "reward", 10 - reward * 10)
         # self.PrintState(np.array(state))
         return np.array(state), reward, constraint_chk

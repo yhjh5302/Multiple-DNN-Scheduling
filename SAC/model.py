@@ -9,20 +9,10 @@ from .util import *
 
 class PolicyNetworkBase(nn.Module):
     """ Base network class for policy function """
-    def __init__(self, state_space, action_space, action_range):
+    def __init__(self, state_dim, action_dim, action_range):
         super(PolicyNetworkBase, self).__init__()
-        self._state_space = state_space
-        self._state_shape = state_space.shape
-        if len(self._state_shape) == 1:
-            self._state_dim = self._state_shape[0]
-        else:  # high-dim state
-            pass  
-        self._action_space = action_space
-        self._action_shape = action_space.shape
-        if len(self._action_shape) < 1:  # Discrete space
-            self._action_dim = action_space.n
-        else:
-            self._action_dim = self._action_shape[0]
+        self._state_dim = state_dim
+        self._action_dim = action_dim
         self.action_range = action_range
 
     def forward(self):
@@ -40,8 +30,9 @@ class PolicyNetworkBase(nn.Module):
 
 
 class SAC_PolicyNetworkLSTM(PolicyNetworkBase):
-    def __init__(self, state_space, action_space, hidden_size, action_range=1., init_w=3e-3, log_std_min=-20, log_std_max=2):
-        super().__init__(state_space, action_space, action_range=action_range)
+    def __init__(self, state_dim, action_dim, hidden_size, action_range=1., init_w=3e-3, log_std_min=-20, log_std_max=2):
+        super().__init__(state_dim, action_dim, action_range=action_range)
+        print("ss", self._state_dim, self._action_dim)
         
         self.log_std_min = log_std_min
         self.log_std_max = log_std_max
@@ -209,8 +200,8 @@ class QNetworkLSTM2(QNetworkBase):
     The network follows single-branch structure as in paper: 
     Memory-based control with recurrent neural networks
     """
-    def __init__(self, state_space, action_space, hidden_dim, activation=F.relu, output_activation=None):
-        super().__init__(state_space, action_space, activation)
+    def __init__(self, state_dim, action_dim, hidden_dim, activation=F.relu, output_activation=None):
+        super().__init__(state_dim, action_dim, activation)
         self.hidden_dim = hidden_dim
 
         self.linear1 = nn.Linear(self._state_dim+2*self._action_dim, hidden_dim)

@@ -147,7 +147,7 @@ if __name__=="__main__":
 
     result_by_services = []
 
-    service_low = 1
+    service_low = 3
     service_high = 9
     service_step = 3
     for num_services in range(service_low, service_high+1, service_step):

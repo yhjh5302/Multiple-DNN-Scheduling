@@ -50,7 +50,7 @@ def SAC(num_states, num_actions, env, dataset):
             for step in range(env.max_step):
                 hidden_in = hidden_out
                 action, hidden_out = sac_trainer.policy_net.get_action(state, last_action, hidden_in, deterministic = DETERMINISTIC)
-                next_state, reward, done, _ = env.step(action)
+                next_state, reward, done, _ = env.next_step(action)
 
                 if step == 0:
                     ini_hidden_in = hidden_in
@@ -111,16 +111,16 @@ def plot(rewards):
 
 
 class SAC_Trainer():
-    def __init__(self, replay_buffer, state_space, action_space, hidden_dim, action_range):
+    def __init__(self, replay_buffer, state_dim, action_dim, hidden_dim, action_range):
         
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.replay_buffer = replay_buffer
 
-        self.soft_q_net1 = QNetworkLSTM(state_space, action_space, hidden_dim).to(self.device)
-        self.soft_q_net2 = QNetworkLSTM(state_space, action_space, hidden_dim).to(self.device)
-        self.target_soft_q_net1 = QNetworkLSTM(state_space, action_space, hidden_dim).to(self.device)
-        self.target_soft_q_net2 = QNetworkLSTM(state_space, action_space, hidden_dim).to(self.device)
-        self.policy_net = SAC_PolicyNetworkLSTM(state_space, action_space, hidden_dim, action_range).to(self.device)
+        self.soft_q_net1 = QNetworkLSTM(state_dim, action_dim, hidden_dim).to(self.device)
+        self.soft_q_net2 = QNetworkLSTM(state_dim, action_dim, hidden_dim).to(self.device)
+        self.target_soft_q_net1 = QNetworkLSTM(state_dim, action_dim, hidden_dim).to(self.device)
+        self.target_soft_q_net2 = QNetworkLSTM(state_dim, action_dim, hidden_dim).to(self.device)
+        self.policy_net = SAC_PolicyNetworkLSTM(state_dim, action_dim, hidden_dim, action_range).to(self.device)
         self.log_alpha = torch.zeros(1, dtype=torch.float32, requires_grad=True, device=self.device)
         print('Soft Q Network (1,2): ', self.soft_q_net1)
         print('Policy Network: ', self.policy_net)

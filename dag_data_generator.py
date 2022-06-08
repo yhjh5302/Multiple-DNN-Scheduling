@@ -19,6 +19,11 @@ class DAGDataSet:
         self.partition_device_map = np.array([idx for idx, cg in enumerate(self.coarsened_graph) for _ in np.unique(cg)])
         self.system_manager.partition_device_map = np.array([idx for idx, cg in enumerate(self.coarsened_graph) for _ in cg])
 
+        self.partition_service_map = np.array([idx for idx, cg in enumerate(self.coarsened_graph) for _ in cg])
+        self.partition_layer_map = np.array([self.svc_set.partitions[idx].layer_idx for idx in range(self.num_partitions)])
+        self.partition_workload_map = np.array([self.svc_set.partitions[idx].workload_size for idx in range(self.num_partitions)])
+        self.partition_memory_map = np.array([self.svc_set.partitions[idx].memory for idx in range(self.num_partitions)])
+
     def create_arrival_rate(self, num_services, minimum, maximum):
         return minimum + (maximum - minimum) * np.random.random(num_services)
 
@@ -265,18 +270,14 @@ class DAGDataSet:
                         pred_partition['output_data_size'].append(partition['input_data_size'][ith])
                 # create partitions
                 for partition in partitions:
-                    print(partition)
                     if len(partition['predecessors']) == 0 and len(partition['successors']) == 0:
                         print(partition['layer_name'], 'has no predecessor and successor node. so deleted from DAG')
                         continue
                     svc.partitions.append(Partition(svc_set=svc_set, service=svc, **partition))
-                input()
             else:
                 for layer_idx, layer_info in enumerate(dnn['layers']):
-                    print(layer_info)
                     layer_info['layer_idx'] = layer_idx
                     svc.partitions.append(Partition(svc_set=svc_set, service=svc, **layer_info))
-                input()
 
             svc_set.add_services(svc)
 

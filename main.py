@@ -248,12 +248,12 @@ if __name__=="__main__":
             # memetic_psoga_took_lst.append(memetic_psoga_took)
             # memetic_psoga_result.append(sorted(result(dataset, memetic_psoga_x_lst, took=memetic_psoga_took, algorithm_name="Memetic-PSO-GA Algorithm (M={}, D={})".format(num_services, num_servers)), key=itemgetter(2), reverse=True))
 
-            temp = [genetic.run_algo(loop=loop, verbose=False, local_search=True) for _ in range(iteration)]
-            memetic_genetic_x_lst = [x for (x, e, t) in temp]
-            memetic_genetic_eval_lst.append([e for (x, e, t) in temp])
-            memetic_genetic_took = [t for (x, e, t) in temp]
-            memetic_genetic_took_lst.append(memetic_genetic_took)
-            memetic_genetic_result.append(sorted(result(dataset, memetic_genetic_x_lst, took=memetic_genetic_took, algorithm_name="Memetic-Genetic Algorithm (M={}, D={})".format(num_services, num_servers)), key=itemgetter(2), reverse=True))
+            # temp = [genetic.run_algo(loop=loop, verbose=False, local_search=True) for _ in range(iteration)]
+            # memetic_genetic_x_lst = [x for (x, e, t) in temp]
+            # memetic_genetic_eval_lst.append([e for (x, e, t) in temp])
+            # memetic_genetic_took = [t for (x, e, t) in temp]
+            # memetic_genetic_took_lst.append(memetic_genetic_took)
+            # memetic_genetic_result.append(sorted(result(dataset, memetic_genetic_x_lst, took=memetic_genetic_took, algorithm_name="Memetic-Genetic Algorithm (M={}, D={})".format(num_services, num_servers)), key=itemgetter(2), reverse=True))
 
             temp = [psoga.run_algo(loop=loop, verbose=False, local_search=False) for _ in range(iteration)]
             psoga_x_lst = [x for (x, e, t) in temp]
