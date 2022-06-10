@@ -158,14 +158,38 @@ class SystemManager():
             result[svc.id] = max(self.finish_time[start:end])
         return result
 
-    def get_completion_time_partition(self, p_id):
+    def get_completion_time_partition(self, p_id, finish_time, ready_time):
         num_partitions = len(self.service_set.partitions)
+        if finish_time is None and ready_time is None:
+            finish_time = np.zeros(num_partitions)
+            ready_time = np.zeros(num_partitions)
+            for idx, predecessors in self.service_set.partition_predecessor.items():
+                if len(predecessors) == 0:
+                    ready_time[idx] = self.net_manager.communication(self.service_set.input_data_size[(idx,idx)], self.partition_device_map[idx], self.deployed_server[idx])
 
-        node_weight = np.array([self.computation_time_table[partition.total_id][self.deployed_server[partition.total_id]] for partition in self.service_set.partitions])
-        edge_weight = dag_completion_time.get_edge_weight(self.num_servers, self.num_servers-2, self.num_servers-1, self.net_manager.B_edge_up, self.net_manager.B_edge_down, self.net_manager.B_cloud_up, self.net_manager.B_cloud_down, self.net_manager.memory_bandwidth, self.deployed_server, self.partition_device_map, self.service_set.input_data_size, self.net_manager.B_dd.flatten())
+        task_ready_time = max(ready_time[p_id], max(finish_time[np.where(self.deployed_server==self.deployed_server[p_id])]))
+        finish_time[p_id] = task_ready_time + self.service_set.partitions[p_id].get_computation_time()
 
-        finish_time = dag_completion_time.get_completion_time_partition(p_id, num_partitions, self.deployed_server, self.execution_order, node_weight, edge_weight, self.service_set.partition_predecessor, self.service_set.partition_successor)
-        return finish_time
+        for succ_id in self.service_set.partition_successor[p_id]:
+            if not False in [finish_time[pred_id] > 0 for pred_id in self.service_set.partition_predecessor[succ_id]]:
+                TR_n = self.net_manager.communication(self.service_set.input_data_size[(p_id,succ_id)], self.deployed_server[p_id], self.deployed_server[succ_id])
+                for pred_id in self.service_set.partition_predecessor[succ_id]:
+                    if finish_time[pred_id] > 0:
+                        TF_p = finish_time[pred_id]
+                    else:
+                        raise RuntimeError("Error: predecessor not finish, #{}".format(succ_id))
+                    T_tr = self.net_manager.communication(self.service_set.input_data_size[(pred_id,succ_id)], self.deployed_server[pred_id], self.deployed_server[succ_id])
+                    TR_n = max(TF_p + T_tr, TR_n)
+                ready_time[succ_id] = TR_n
+        return finish_time, ready_time
+
+        # num_partitions = len(self.service_set.partitions)
+
+        # node_weight = np.array([self.computation_time_table[partition.total_id][self.deployed_server[partition.total_id]] for partition in self.service_set.partitions])
+        # edge_weight = dag_completion_time.get_edge_weight(self.num_servers, self.num_servers-2, self.num_servers-1, self.net_manager.B_edge_up, self.net_manager.B_edge_down, self.net_manager.B_cloud_up, self.net_manager.B_cloud_down, self.net_manager.memory_bandwidth, self.deployed_server, self.partition_device_map, self.service_set.input_data_size, self.net_manager.B_dd.flatten())
+
+        # finish_time = dag_completion_time.get_completion_time_partition(p_id, num_partitions, self.deployed_server, self.execution_order, node_weight, edge_weight, self.service_set.partition_predecessor, self.service_set.partition_successor)
+        # return finish_time
 
     def set_servers(self, request, local, edge, cloud):
         self.request = request
@@ -223,9 +247,7 @@ class SystemManager():
                         self.calc_rank_ready_total(partition)
                 execution_order = np.array(np.array(sorted(zip(self.rank_ready, np.arange(num_partitions)), reverse=False), dtype=np.int32)[:,1], dtype=np.int32)
 
-        self.execution_order = np.zeros_like(execution_order)
-        for idx, k in enumerate(execution_order):
-            self.execution_order[k] = idx
+        self.execution_order = execution_order
 
     def get_reward(self):
         T_n = self.total_time_dp()
@@ -582,10 +604,12 @@ class Server:
             return 0
 
     def computation_energy_consumption(self):
-        E_cp_d = 0#self.min_energy_consumption
+        E_cp_d = 0.
+        computation_energy = (self.max_energy_consumption - self.min_energy_consumption) * self.tau
         for c in self.deployed_partition.values():
             T_cp = c.get_computation_time()
-            E_cp_d += (self.max_energy_consumption - self.min_energy_consumption) * T_cp * c.service.arrival * self.tau
+            E_cp_d += T_cp * c.service.arrival
+        E_cp_d *= computation_energy
         return E_cp_d
 
     def transmission_energy_consumption(self):

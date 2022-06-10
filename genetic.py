@@ -572,22 +572,27 @@ class HEFT:
 
         self.system_manager.init_env()
         for t in range(self.num_timeslots):
+            finish_time, ready_time = None, None
             for _, top_rank in enumerate(y[t]):
                 # initialize the earliest finish time of the task
                 earliest_finish_time = np.inf
                 # for all available server, find earliest finish time server
+
                 for s_id in self.server_lst:
                     temp_x = x[t,top_rank]
                     x[t,top_rank] = s_id
                     if False not in self.system_manager.constraint_chk(deployed_server=x[t], execution_order=y[t]):
-                        self.system_manager.set_env(deployed_server=x[t], execution_order=y[t])
-                        finish_time = self.system_manager.get_completion_time_partition(top_rank)
-                        if finish_time < earliest_finish_time:
-                            earliest_finish_time = finish_time
+                        temp_finish_time, temp_ready_time = self.system_manager.get_completion_time_partition(top_rank, np.copy(finish_time), np.copy(ready_time))
+                        print("finish_time", finish_time[top_rank], ready_time[top_rank])
+                        input()
+                        if temp_finish_time[top_rank] < earliest_finish_time:
+                            earliest_finish_time = temp_finish_time[top_rank]
                         else:
                             x[t,top_rank] = temp_x
                     else:
                         x[t,top_rank] = temp_x
+                self.system_manager.set_env(deployed_server=x[t], execution_order=y[t])
+                finish_time, ready_time = self.system_manager.get_completion_time_partition(top_rank, np.copy(finish_time), np.copy(ready_time))
             self.system_manager.after_timeslot(deployed_server=x[t], execution_order=y[t], timeslot=t)
         return np.array(x, dtype=np.int32), np.array(y, dtype=np.int32)
 
@@ -634,7 +639,6 @@ class Greedy:
                     temp_x = x[t,top_rank]
                     x[t,top_rank] = s_id
                     if False not in self.system_manager.constraint_chk(deployed_server=x[t], execution_order=y[t]):
-                        self.system_manager.set_env(deployed_server=x[t], execution_order=y[t])
                         latency = self.system_manager.get_completion_time_partition(top_rank)
                         if latency < minimum_latency:
                             minimum_latency = latency
@@ -654,7 +658,6 @@ class Greedy:
                         temp_x = x[t,top_rank]
                         x[t,top_rank] = s_id
                         if False not in self.system_manager.constraint_chk(deployed_server=x[t], execution_order=y[t]):
-                            self.system_manager.set_env(deployed_server=x[t], execution_order=y[t])
                             latency = max(self.system_manager.total_time_dp())
                             if latency < minimum_latency:
                                 minimum_latency = latency
@@ -670,7 +673,6 @@ class Greedy:
                         temp_x = x[t,top_rank]
                         x[t,top_rank] = s_id
                         if False not in self.system_manager.constraint_chk(deployed_server=x[t], execution_order=y[t]):
-                            self.system_manager.set_env(deployed_server=x[t], execution_order=y[t])
                             latency = max(self.system_manager.total_time_dp())
                             if latency < minimum_latency:
                                 minimum_latency = latency
@@ -704,7 +706,6 @@ class Greedy:
                     temp_x = x[t,p_id]
                     x[t,p_id] = s_id
                     if self.system_manager.constraint_chk(deployed_server=self.get_uncoarsened_x(x[t]), s_id=s_id):
-                        self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(x[t]))
                         latency = max(self.system_manager.total_time_dp())
                         if latency < minimum_latency:
                             minimum_latency = latency
@@ -726,7 +727,6 @@ class Greedy:
             #             temp_x = x[t,p_id]
             #             x[t,p_id] = s_id
             #             if self.system_manager.constraint_chk(deployed_server=self.get_uncoarsened_x(x[t]), s_id=s_id):
-            #                 self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(x[t]))
             #                 latency = max(self.system_manager.total_time_dp())
             #                 if latency < minimum_latency:
             #                     minimum_latency = latency
@@ -744,7 +744,6 @@ class Greedy:
             #             temp_x = x[t,p_id]
             #             x[t,p_id] = s_id
             #             if self.system_manager.constraint_chk(deployed_server=self.get_uncoarsened_x(x[t]), s_id=s_id):
-            #                 self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(x[t]))
             #                 latency = max(self.system_manager.total_time_dp())
             #                 if latency < minimum_latency:
             #                     minimum_latency = latency

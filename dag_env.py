@@ -39,6 +39,13 @@ class DAGEnv():
 
     def get_state(self, x, step):
         if step >= 0:
+            # 바로 여기서 각 서버에 대한 percentage를 partition 배치로 전환
+            # 구체적으로는 partition별 workload를 계산해서 0.1 0.1 0.8이면 제일 큰 순서대로 
+            index = self.dataset.partition_layer_map[step]
+            for idx, ratio in enumerate(x):
+                print("ratio", (ratio + 1) / 2)
+            print("x", x)
+            input()
             self.deployed_server[step] = self.server_lst[x]
         constraint_chk = self.dataset.system_manager.constraint_chk(deployed_server=self.deployed_server, execution_order=self.execution_order)
 

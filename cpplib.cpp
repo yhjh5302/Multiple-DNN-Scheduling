@@ -71,13 +71,11 @@ PyObject* get_completion_time(PyObject* self, PyObject* args) {
     }
 
     for (int n = 0; n < num_partitions; n++) {
-        int first_order = 2147483647;
         int target_c_id = 0;
-
-        for (int c_id = 0; c_id < num_partitions; c_id++) {
-            if (ready_time[c_id] > 0 && finish_time[c_id] == 0 && first_order > execution_order[c_id]) {
-                first_order = execution_order[c_id];
-                target_c_id = c_id;
+        for (int order = 0; order < num_partitions; order++) {
+            target_c_id = execution_order[order];
+            if (ready_time[target_c_id] > 0 && finish_time[target_c_id] == 0) {
+                break;
             }
         }
 
@@ -145,13 +143,11 @@ PyObject* get_completion_time_partition(PyObject* self, PyObject* args) {
     }
 
     for (int n = 0; n < num_partitions; n++) {
-        int first_order = 2147483647;
         int target_c_id = 0;
-
-        for (int c_id = 0; c_id < num_partitions; c_id++) {
-            if (ready_time[c_id] > 0 && finish_time[c_id] == 0 && first_order > execution_order[c_id]) {
-                first_order = execution_order[c_id];
-                target_c_id = c_id;
+        for (int order = 0; order < num_partitions; order++) {
+            target_c_id = execution_order[order];
+            if (ready_time[target_c_id] > 0 && finish_time[target_c_id] == 0) {
+                break;
             }
         }
 

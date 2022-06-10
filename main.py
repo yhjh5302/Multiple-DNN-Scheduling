@@ -195,7 +195,7 @@ if __name__=="__main__":
 
         result_by_servers = []
 
-        server_low = 0
+        server_low = 10
         server_high = 10
         server_step = 2
         for num_servers in range(server_low, server_high+1, server_step):
@@ -230,6 +230,7 @@ if __name__=="__main__":
             greedy_took = [time.time() - start]
             greedy_result.append(result(dataset, greedy_x_lst, took=greedy_took, algorithm_name="Greedy Algorithm (M={}, D={})".format(num_services, num_servers)))
 
+            input()
             # dataset.system_manager.init_env()
             # dataset.system_manager.set_env(deployed_server=greedy_x_lst[0][0])
             # deadline = dataset.system_manager.total_time_dp()
