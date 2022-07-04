@@ -64,84 +64,8 @@ if __name__=="__main__":
         test_dataset = DAGDataSet(num_timeslots=1, num_services=test_num_services, apply_partition=False)
         with open("outputs/net_manager_backup", "wb") as fp:
             pickle.dump(test_dataset.system_manager.net_manager, fp)
-
-    '''
-    result_by_services = []
-
-    service_low = 1
-    service_high = 9
-    service_step = 1
-    for num_services in range(service_low, service_high+1, service_step):
-        print(":::::::::: M ==", num_services, "::::::::::\n")
     
-        local_result = []
-        edge_result = []
-        heft_result = []
-        greedy_result = []
-
-        dataset = DAGDataSet(num_timeslots=1, num_services=num_services, net_manager=test_dataset.system_manager.net_manager, apply_partition=False)
-        dataset.system_manager.scheduling_policy = 'noschedule'
-
-        dataset.system_manager.set_env(deployed_server=np.full(shape=dataset.num_partitions, fill_value=list(dataset.system_manager.request.keys())[0], dtype=np.int32))
-        print("Raspberry Pi computation time", [sum([p.get_computation_time() for p in svc.partitions]) for svc in dataset.svc_set.services])
-        print("Raspberry Pi computing capacity", [sum([p.workload_size * p.deployed_server.computing_intensity[p.service.id] for p in svc.partitions]) for svc in dataset.svc_set.services], "\n")
-        dataset.system_manager.set_env(deployed_server=np.full(shape=dataset.num_partitions, fill_value=list(dataset.system_manager.local.keys())[0], dtype=np.int32))
-        print("Jetson Nano computation time", [sum([p.get_computation_time() for p in svc.partitions]) for svc in dataset.svc_set.services])
-        print("Jetson Nano computing capacity", [sum([p.workload_size * p.deployed_server.computing_intensity[p.service.id] for p in svc.partitions]) for svc in dataset.svc_set.services], "\n")
-        dataset.system_manager.set_env(deployed_server=np.full(shape=dataset.num_partitions, fill_value=list(dataset.system_manager.local.keys())[1], dtype=np.int32))
-        print("Jetson TX2 computation time", [sum([p.get_computation_time() for p in svc.partitions]) for svc in dataset.svc_set.services])
-        print("Jetson TX2 computing capacity", [sum([p.workload_size * p.deployed_server.computing_intensity[p.service.id] for p in svc.partitions]) for svc in dataset.svc_set.services], "\n")
-        dataset.system_manager.set_env(deployed_server=np.full(shape=dataset.num_partitions, fill_value=list(dataset.system_manager.edge.keys())[0], dtype=np.int32))
-        print("Edge computation time", [sum([p.get_computation_time() for p in svc.partitions]) for svc in dataset.svc_set.services])
-        print("Edge computing capacity", [sum([p.workload_size * p.deployed_server.computing_intensity[p.service.id] for p in svc.partitions]) for svc in dataset.svc_set.services], "\n")
-
-        heft = HEFT(dataset=dataset)
-        greedy = Greedy(dataset=dataset)
-
-        result_by_servers = []
-
-        server_low = 0
-        server_high = 10
-        server_step = 2
-        for num_servers in range(server_low, server_high+1, server_step):
-            print(":::::::::: S ==", num_servers, "::::::::::\n")
-
-            heft.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys())
-            greedy.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys())
-
-            start = time.time()
-            local_x_lst = [np.array([[dataset.system_manager.net_manager.request_device[p.service.id] for p in dataset.svc_set.partitions] for t in range(dataset.num_timeslots)])]
-            local_took = [time.time() - start]
-            local_result.append(result(dataset, local_x_lst, took=local_took, algorithm_name="Test Local Only"))
-
-            start = time.time()
-            edge_x_lst = [np.full(shape=(dataset.num_timeslots, dataset.num_partitions), fill_value=list(dataset.system_manager.edge.keys())[0], dtype=np.int32)]
-            edge_took = [time.time() - start]
-            edge_result.append(result(dataset, edge_x_lst, took=edge_took, algorithm_name="Test Edge Only"))
-
-            start = time.time()
-            heft_x_lst = [heft.run_algo()]
-            heft_took = [time.time() - start]
-            heft_result.append(result(dataset, heft_x_lst, took=heft_took, algorithm_name="Test HEFT Algorithm (M={}, D={})".format(num_services, num_servers)))
-
-            start = time.time()
-            greedy_x_lst = [greedy.run_algo()]
-            greedy_took = [time.time() - start]
-            greedy_result.append(result(dataset, greedy_x_lst, took=greedy_took, algorithm_name="Test Greedy Algorithm (M={}, D={})".format(num_services, num_servers)))
-
-        del heft
-        del greedy
-        del dataset
-        result_by_services.append([local_result, edge_result, heft_result, greedy_result, server_low, server_high, server_step, num_services])
-        with open("outputs/test_results_backup_{}".format(num_services), "wb") as fp:
-            pickle.dump(result_by_services, fp)
-
-    with open("outputs/test_results_backup", "wb") as fp:
-        pickle.dump(result_by_services, fp)
-
-    for result_by_servers in result_by_services:
-        draw_result.by_num_service_test(*result_by_servers)
-    #'''
+    layer_schedule = np.copy(test_dataset.system_manager.rank_u_schedule)
 
     print("\n========== Piecewise Scheme Start ==========\n")
 
@@ -155,9 +79,16 @@ if __name__=="__main__":
     
         local_result = []
         edge_result = []
-        heft_result = []
-        greedy_result = []
+        heft_u_result = []
+        heft_d_result = []
+        heft_arange_result = []
+        greedy_u_result = []
+        greedy_d_result = []
+        greedy_arange_result = []
+
         sac_result = []
+        sac_result = []
+        sac_took_lst = []
 
         dataset = DAGDataSet(num_timeslots=1, num_services=num_services, net_manager=test_dataset.system_manager.net_manager, apply_partition='horizontal')
 
@@ -176,12 +107,10 @@ if __name__=="__main__":
 
         heft = HEFT(dataset=dataset)
         greedy = Greedy(dataset=dataset)
-        psoga = PSOGA(dataset=dataset, num_particles=50, w_max=0.8, w_min=0.2, c1_s=0.9, c1_e=0.2, c2_s=0.4, c2_e=0.9)
-        genetic = Genetic(dataset=dataset, num_solutions=50, mutation_ratio=0.1, cross_over_ratio=0.7)
 
         result_by_servers = []
 
-        server_low = 0
+        server_low = 10
         server_high = 10
         server_step = 2
         for num_servers in range(server_low, server_high+1, server_step):
@@ -189,8 +118,7 @@ if __name__=="__main__":
 
             heft.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys())
             greedy.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys())
-            genetic.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys())
-            psoga.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys())
+            dataset.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys())
 
             dataset.system_manager.scheduling_policy = 'noschedule'
 
@@ -204,32 +132,30 @@ if __name__=="__main__":
             edge_took = [time.time() - start]
             edge_result.append(result(dataset, edge_x_lst, took=edge_took, algorithm_name="Edge Only"))
 
-            dataset.system_manager.scheduling_policy = 'EFT'
+            heft.rank = 'rank_u'
+            dataset.system_manager.scheduling_policy = 'rank_u'
 
             start = time.time()
             heft_x_lst = [heft.run_algo()]
             heft_took = [time.time() - start]
-            heft_result.append(result(dataset, heft_x_lst, took=heft_took, algorithm_name="HEFT Algorithm (M={}, D={})".format(num_services, num_servers)))
+            heft_u_result.append(result(dataset, heft_x_lst, took=heft_took, algorithm_name="HEFT-U Algorithm (M={}, D={})".format(num_services, num_servers)))
+
+            greedy.rank = 'rank_u'
+            dataset.system_manager.scheduling_policy = 'rank_u'
 
             start = time.time()
             greedy_x_lst = [greedy.run_algo_piecewise()]
             greedy_took = [time.time() - start]
-            greedy_result.append(result(dataset, greedy_x_lst, took=greedy_took, algorithm_name="Greedy Algorithm (M={}, D={})".format(num_services, num_servers)))
+            greedy_u_result.append(result(dataset, greedy_x_lst, took=greedy_took, algorithm_name="Greedy-U Algorithm (M={}, D={})".format(num_services, num_servers)))
 
-            # dataset.system_manager.init_env()
-            # dataset.system_manager.set_env(deployed_server=greedy_x_lst[0][0])
-            # deadline = dataset.system_manager.total_time()
-            # for svc in dataset.svc_set.services:
-            #     svc.deadline = deadline[svc.id]
-
-            dataset.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys())
+            dataset.system_manager.scheduling_policy = 'rank_u'
 
             ## rl test
             from dag_env import DAGEnv
-            env = DAGEnv(dataset, max_episode=1000)
+            env = DAGEnv(dataset, layer_schedule, max_episode=1000)
 
-        result_by_services.append([local_result, edge_result, greedy_result, sac_result, server_low, server_high, server_step, num_services])
-        with open("outputs/results_backup_{}".format(num_services), "wb") as fp:
+        result_by_services.append([local_result, edge_result, heft_u_result, heft_d_result, heft_arange_result, greedy_u_result, greedy_d_result, greedy_arange_result, sac_result, server_low, server_high, server_step, num_services])
+        with open("outputs/rl_results_backup_{}".format(num_services), "wb") as fp:
             pickle.dump(result_by_services, fp)
 
 
@@ -237,13 +163,13 @@ if __name__=="__main__":
     replace_service = 0
     replace_server = 1
     if replace:
-        with open("outputs/results_backup", "rb") as fp:
+        with open("outputs/rl_results_backup", "rb") as fp:
             temp = pickle.load(fp)
             temp[replace_service][replace_server] = result_by_services[0][0]
-        with open("outputs/results_backup", "wb") as fp:
+        with open("outputs/rl_results_backup", "wb") as fp:
             pickle.dump(temp, fp)
     else:
-        with open("outputs/results_backup", "wb") as fp:
+        with open("outputs/rl_results_backup", "wb") as fp:
             pickle.dump(result_by_services, fp)
 
     for result_by_servers in result_by_services:

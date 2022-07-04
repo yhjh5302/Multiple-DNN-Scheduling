@@ -71,11 +71,13 @@ PyObject* get_completion_time(PyObject* self, PyObject* args) {
     }
 
     for (int n = 0; n < num_partitions; n++) {
+        int first_order = 2147483647;
         int target_c_id = 0;
-        for (int order = 0; order < num_partitions; order++) {
-            target_c_id = execution_order[order];
-            if (ready_time[target_c_id] > 0 && finish_time[target_c_id] == 0) {
-                break;
+
+        for (int c_id = 0; c_id < num_partitions; c_id++) {
+            if (ready_time[c_id] > 0 && finish_time[c_id] == 0 && first_order > execution_order[c_id]) {
+                first_order = execution_order[c_id];
+                target_c_id = c_id;
             }
         }
 
@@ -143,11 +145,13 @@ PyObject* get_completion_time_partition(PyObject* self, PyObject* args) {
     }
 
     for (int n = 0; n < num_partitions; n++) {
+        int first_order = 2147483647;
         int target_c_id = 0;
-        for (int order = 0; order < num_partitions; order++) {
-            target_c_id = execution_order[order];
-            if (ready_time[target_c_id] > 0 && finish_time[target_c_id] == 0) {
-                break;
+
+        for (int c_id = 0; c_id < num_partitions; c_id++) {
+            if (ready_time[c_id] > 0 && finish_time[c_id] == 0 && first_order > execution_order[c_id]) {
+                first_order = execution_order[c_id];
+                target_c_id = c_id;
             }
         }
 
@@ -296,6 +300,7 @@ PyObject* get_edge_weight(PyObject* self, PyObject* args) {
         return NULL;
     }
     Py_DECREF(&py_deployed_server);
+    Py_DECREF(&py_request_device);
     Py_DECREF(&py_input_data_size);
     Py_DECREF(&py_B_dd);
 
@@ -315,6 +320,48 @@ PyObject* get_edge_weight(PyObject* self, PyObject* args) {
     PyObject *py_edge_weight = PyDict_New();
     mapToDict(edge_weight, py_edge_weight);
     return py_edge_weight;
+}
+
+PyObject* get_edge_energy_weight(PyObject* self, PyObject* args) {
+    Py_Initialize();
+    import_array();
+
+    // initialize
+    int num_servers, edge_id, cloud_id, server_id;
+    double B_edge_up, B_edge_down, B_cloud_up, B_cloud_down, memory_bandwidth;
+    PyObject *py_deployed_server, *py_input_data_size, *py_B_dd, *py_P_dd, *py_partition_arrival_map;
+    if (!PyArg_ParseTuple(args, "iiiidddddOOOOO", &num_servers, &edge_id, &cloud_id, &server_id, &B_edge_up, &B_edge_down, &B_cloud_up, &B_cloud_down, &memory_bandwidth, &py_deployed_server, &py_input_data_size, &py_B_dd, &py_P_dd, &py_partition_arrival_map)) {
+        std::cout << "PyArg_ParseTuple Error" << std::endl;
+        return NULL;
+    }
+    int *deployed_server = (int*)PyArray_DATA(py_deployed_server);
+    double *B_dd = (double*)PyArray_DATA(py_B_dd);
+    double *P_dd = (double*)PyArray_DATA(py_P_dd);
+    double *partition_arrival_map = (double*)PyArray_DATA(py_partition_arrival_map);
+    std::map<std::pair<int, int>, double> input_data_size;
+    if (!dictToMap(py_input_data_size, input_data_size)) {
+        std::cout << "dictToMap Error" << std::endl;
+        return NULL;
+    }
+    Py_DECREF(&py_deployed_server);
+    Py_DECREF(&py_input_data_size);
+    Py_DECREF(&py_B_dd);
+    Py_DECREF(&py_P_dd);
+    Py_DECREF(&py_partition_arrival_map);
+
+    // completion time calculation
+    double E_tr = 0;
+    auto iter = input_data_size.begin();
+    while (iter != input_data_size.end()) {
+        if (deployed_server[iter->first.first] == server_id) {
+            E_tr += get_transmission_time(iter->second, deployed_server[iter->first.first], deployed_server[iter->first.second], B_dd, B_edge_up, B_edge_down, B_cloud_up, B_cloud_down, memory_bandwidth, num_servers, edge_id, cloud_id)
+                    * P_dd[deployed_server[iter->first.first] * num_servers + deployed_server[iter->first.second]]
+                    * partition_arrival_map[iter->first.first];
+        }
+        ++iter;
+    }
+
+    return PyFloat_FromDouble(E_tr);
 }
 
 double get_transmission_time(double amount, int sender, int receiver, double *B_dd, double B_edge_up, double B_edge_down, double B_cloud_up, double B_cloud_down, double memory_bandwidth, int num_servers, int edge_id, int cloud_id) {
@@ -373,6 +420,8 @@ bool dictToMap(PyObject *srcDict, std::map<std::pair<int, int>, double> &destMap
             // might be worth checking PyFloat_Check...
             destMap[std::make_pair(first, second)] = PyFloat_AsDouble(currentVal);
         }
+        Py_DECREF(&currentKey);
+        Py_DECREF(&currentVal);
         return (numItems == destMap.size());
     }
     else { // not a dict return with failure
@@ -391,6 +440,8 @@ bool dictToMap(PyObject *srcDict, std::map<int, std::vector<int>> &destMap) {
             // might be worth checking PyFloat_Check...
             destMap[PyLong_AsLong(currentKey)] = listTupleToVector(currentVal);
         }
+        Py_DECREF(&currentKey);
+        Py_DECREF(&currentVal);
         return (numItems == destMap.size());
     }
     else { // not a dict return with failure
@@ -411,6 +462,7 @@ std::vector<int> listTupleToVector(PyObject* incoming) {
         for(Py_ssize_t i = 0; i < PyList_Size(incoming); i++) {
             PyObject *value = PyList_GetItem(incoming, i);
             data.push_back(PyLong_AsLong(value));
+            Py_DECREF(&value);
         }
     }
     else {
@@ -435,6 +487,7 @@ static PyMethodDef dag_completion_time_methods[] = {
     { "get_completion_time_partition", (PyCFunction)get_completion_time_partition, METH_VARARGS, "calculate DAG completion time" },
     { "get_completion_time_ra", (PyCFunction)get_completion_time_ra, METH_VARARGS, "calculate DAG completion time" },
     { "get_edge_weight", (PyCFunction)get_edge_weight, METH_VARARGS, "calculate DAG edge weight" },
+    { "get_edge_energy_weight", (PyCFunction)get_edge_energy_weight, METH_VARARGS, "calculate DAG edge weight" },
  
     // Terminate the array with an object containing nulls.
     { nullptr, nullptr, 0, nullptr }

@@ -7,23 +7,24 @@ from dag_data_generator import *
 
 
 class DAGEnv():
-    def __init__(self, dataset, max_episode):
+    def __init__(self, dataset, layer_schedule, max_episode):
         self.dataset = dataset
-        self.num_layers = len(np.unique(self.dataset.partition_layer_map))
-        print("self.num_layers", self.num_layers)
+        self.num_layers = len(layer_schedule)
         self.num_partitions = self.dataset.num_partitions
         self.num_requests = self.dataset.num_requests
         self.server_lst = self.dataset.server_lst
         self.num_servers = len(self.server_lst)
         self.deployed_server = np.full(self.num_partitions, fill_value=self.dataset.system_manager.cloud_id, dtype=np.int32)
-        self.execution_order = self.dataset.system_manager.EFT_schedule
+        self.execution_order = self.dataset.system_manager.rank_u_schedule
+
+        self.layer_schedule = layer_schedule
 
         self.cur_episode = 0
         self.max_episode = max_episode
         self.cur_timeslot = 0
         self.max_timeslot = dataset.num_timeslots
         self.cur_step = 0
-        self.max_step = self.num_partitions
+        self.max_step = len(layer_schedule)
 
         self.action = np.zeros(self.num_servers)
         self.state = self.reset()[0]
@@ -38,32 +39,62 @@ class DAGEnv():
         return self.get_state(self.num_servers-1, step=-1)[0], np.zeros(self.num_servers)
 
     def get_state(self, x, step):
+        x = (x + 1) / 2
+        index = np.where(self.dataset.partition_layer_map == self.layer_schedule[step])[0]
         if step >= 0:
-            # 바로 여기서 각 서버에 대한 percentage를 partition 배치로 전환
-            # 구체적으로는 partition별 workload를 계산해서 0.1 0.1 0.8이면 제일 큰 순서대로 
-            index = self.dataset.partition_layer_map[step]
-            for idx, ratio in enumerate(x):
-                print("ratio", (ratio + 1) / 2)
-            print("x", x)
-            input()
-            self.deployed_server[step] = self.server_lst[x]
-        constraint_chk = self.dataset.system_manager.constraint_chk(deployed_server=self.deployed_server, execution_order=self.execution_order)
+            while True:
+                # 바로 여기서 각 서버에 대한 percentage를 partition 배치로 전환
+                # 구체적으로는 partition별 workload를 계산해서 0.1 0.1 0.8이면 제일 큰 순서대로 
+                portion = x / sum(x) * len(index)
+                floor = np.floor(x / sum(x) * len(index))
+                difference = portion - floor
+                for _ in range(len(index) - int(sum(floor))):
+                    maxidx = np.argmax(difference)
+                    difference[maxidx] = 0
+                    floor[maxidx] += 1
+                portion, s_id = floor, 0
+                for total_id in index:
+                    for s_id, p in enumerate(portion):
+                        if p == 0:
+                            continue
+                        else:
+                            break
+                    portion[s_id] -= 1
+                    self.deployed_server[total_id] = self.server_lst[s_id]
+
+                self.dataset.system_manager.set_env(deployed_server=self.deployed_server, execution_order=self.execution_order)
+                constraint_chk = self.dataset.system_manager.constraint_chk()
+                for idx, portion in enumerate(x):
+                    if portion == 0:
+                        constraint_chk[self.server_lst[idx]] = True
+                if False in constraint_chk:
+                    for idx, chk in enumerate(constraint_chk):
+                        if chk == False:
+                            x[self.server_lst.index(idx)] = 0
+                    continue
+                else:
+                    self.dataset.system_manager.total_time_dp()
+                    reward = -max(self.dataset.system_manager.finish_time[index])
+                    break
+            # print(self.deployed_server[index], "reward", reward, "constraint_chk", constraint_chk)
+        else:
+            constraint_chk = [True]
+            reward = 0
 
         if step + 1 < self.max_step:
-            reward = 0
             next_step = step + 1
         else:
-            reward = max(-max(self.dataset.system_manager.total_time()), -10) / 10 + 1
             next_step = 0
+        next_partitions = np.where(self.dataset.partition_layer_map==self.layer_schedule[next_step])[0]
+        # for i in next_partitions:
+        #     print(self.dataset.svc_set.partitions[i].layer_name)
+        next_svc = self.dataset.partition_service_map[next_partitions[0]]
         state = []
-        state.extend([sum(self.execution_order[np.where(self.deployed_server==s.id)]) for s in list(self.dataset.system_manager.local.values())+list(self.dataset.system_manager.edge.values())]) # remain resource
-        state.extend([sum(s.deployed_partition_memory.values()) / s.memory for s in list(self.dataset.system_manager.local.values())+list(self.dataset.system_manager.edge.values())]) # server memory
-        state.extend([self.dataset.partition_workload_map[next_step] * s.computing_intensity[self.dataset.partition_service_map[next_step]] / s.computing_frequency for s in list(self.dataset.system_manager.local.values())+list(self.dataset.system_manager.edge.values())]) # partition computation time
-        state.extend([self.dataset.partition_memory_map[next_step] / s.memory for s in list(self.dataset.system_manager.local.values())+list(self.dataset.system_manager.edge.values())]) # partition memory
-        for s in self.deployed_server:
-            state.extend([1 if idx == s - self.num_requests else 0 for idx in range(self.num_servers)])
-        state.extend([1 if idx == next_step else 0 for idx in range(self.max_step)])
-        # print("step", step, "p_id", p_id, "next_p_id", next_p_id, "reward", 10 - reward * 10)
+        state.extend([self.dataset.system_manager.server[s_id].computing_intensity[next_svc] / self.dataset.system_manager.server[s_id].computing_frequency * (10**9) for s_id in self.server_lst]) # server computing power
+        state.extend([sum(self.dataset.system_manager.server[s_id].deployed_partition_memory.values()) / self.dataset.system_manager.server[s_id].memory for s_id in self.server_lst]) # server memory
+        state.extend([self.dataset.system_manager.server[s_id].energy_consumption() / self.dataset.system_manager.server[s_id].cur_energy for s_id in self.server_lst]) # server energy
+        # state.extend([max(self.dataset.system_manager.finish_time[np.where(self.dataset.partition_layer_map==layer)]) if layer in self.layer_schedule[:next_step] else 0 for layer in range(self.num_layers)]) # finish time
+        # print(np.array(state))
         # self.PrintState(np.array(state))
         return np.array(state), reward, constraint_chk
 
@@ -74,10 +105,10 @@ class DAGEnv():
             done = False
             self.cur_step += 1
         else:
+            # print(self.cur_step, reward, constraint_chk)
+            # input()
             done = True
             self.cur_step = 0
-            print(self.deployed_server)
-            print(10 - reward * 10)
         info = {}
         return self.state, reward, done, info
 
@@ -93,27 +124,11 @@ class DAGEnv():
     def PrintState(self, state):
         start = end = 0
         end += self.num_servers
-        print("1: server resource", state[start:end])
+        print("1: server computing power", state[start:end])
         start = end
         end += self.num_servers
         print("2: server memory", state[start:end])
         start = end
         end += self.num_servers
-        print("3: partition computation time", state[start:end])
-        start = end
-        end += self.num_servers
-        print("4: partition memory", state[start:end])
-        for idx, p in enumerate(range(self.num_partitions)):
-            start = end
-            end += self.num_servers
-            # print("{}: partition deployed server".format(5+idx), state[start:end])
-        start = end
-        end += self.num_partitions
-        print("{}: partition resource allocation(converted)".format(5+self.num_partitions), state[start:end])
-        start = end
-        end += self.num_partitions
-        print("{}: partition resource allocation(original)".format(6+self.num_partitions), state[start:end])
-        start = end
-        end += self.num_partitions
-        print("{}: current deployed partition".format(7+self.num_partitions), state[start:end])
+        print("3: server energy", state[start:end])
         input()

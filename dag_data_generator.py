@@ -6,6 +6,10 @@ from dag_server import *
 from multilevel_graph_partitioning import MultiLevelGraphPartitioning
 
 
+# ([0-9]) # partiton size ([0-9])
+# $2 # partiton size $1
+
+
 class DAGDataSet:
     def __init__(self, num_timeslots=1, num_services=3, apply_partition=True, net_manager=None, svc_arrival=None):
         self.num_timeslots = num_timeslots
@@ -16,25 +20,43 @@ class DAGDataSet:
             self.coarsened_graph = self.horizontal_partitioning()
         else:
             self.coarsened_graph = [np.arange(len(svc.partitions)) for svc in self.svc_set.services]
-        self.partition_device_map = np.array([idx for idx, cg in enumerate(self.coarsened_graph) for _ in np.unique(cg)])
-        self.system_manager.partition_device_map = np.array([idx for idx, cg in enumerate(self.coarsened_graph) for _ in cg])
-
+        self.piece_device_map = np.array([idx for idx, cg in enumerate(self.coarsened_graph) for _ in np.unique(cg)])
+        self.piece_service_map = np.array([idx for idx, cg in enumerate(self.coarsened_graph) for _ in np.unique(cg)])
+        self.partition_device_map = np.array([idx for idx, cg in enumerate(self.coarsened_graph) for _ in cg])
         self.partition_service_map = np.array([idx for idx, cg in enumerate(self.coarsened_graph) for _ in cg])
+        self.partition_arrival_map = np.array([self.svc_set.services[svc_id].arrival for svc_id in self.partition_service_map])
         self.partition_layer_map = np.array([self.svc_set.partitions[idx].layer_idx for idx in range(self.num_partitions)])
+        if apply_partition == 'horizontal':
+            self.partition_piece_map = np.array([self.svc_set.partitions[idx].piece_idx for idx in range(self.num_partitions)])
+        else:
+            self.partition_piece_map = np.zeros(self.num_partitions)
         self.partition_workload_map = np.array([self.svc_set.partitions[idx].workload_size for idx in range(self.num_partitions)])
         self.partition_memory_map = np.array([self.svc_set.partitions[idx].memory for idx in range(self.num_partitions)])
+
+        self.system_manager.piece_device_map = self.piece_device_map
+        self.system_manager.piece_service_map = self.piece_service_map
+        self.system_manager.partition_device_map = self.partition_device_map
+        self.system_manager.partition_service_map = self.partition_service_map
+        self.system_manager.partition_arrival_map = self.partition_arrival_map
+        self.system_manager.partition_layer_map = self.partition_layer_map
+        self.system_manager.partition_piece_map = self.partition_piece_map
+        self.system_manager.partition_workload_map = self.partition_workload_map
+        self.system_manager.partition_memory_map = self.partition_memory_map
+
+        self.system_manager.calc_average()
+        self.system_manager.calculate_schedule()
 
     def create_arrival_rate(self, num_services, minimum, maximum):
         return minimum + (maximum - minimum) * np.random.random(num_services)
 
-    def cnn_partitioning(self, layer_info, num_partitions, min_unit):
+    def cnn_partitioning(self, layer_info, num_partitions, min_unit, piece_idx_start):
         min_unit_partitions = []
         output_data_location = []
         min_unit_start = min_unit_end = 0
         for idx in range(num_partitions):
             partition = deepcopy(layer_info)
             partition['layer_name'] = layer_info['layer_name'] + '_{:d}'.format(idx)
-            partition['partition_idx'] = idx
+            partition['piece_idx'] = piece_idx_start + idx
             partition['original_layer_name'] = layer_info['layer_name']
             min_unit_start = min_unit_end
             min_unit_end += min_unit
@@ -43,19 +65,22 @@ class DAGDataSet:
             start = max(layer_info['stride'] * min_unit * idx - layer_info['padding'], 0)
             end = start + partition['input_height']
             partition['input_data_location'] = [i for i in range(start, end)]
-            partition['input_data_size'] = partition['input_height'] * partition['input_width'] * partition['input_channel'] * 4
+            if len(partition['predecessors']) > 0:
+                partition['input_data_size'] = partition['input_height'] * partition['input_width'] * partition['input_channel'] * 4
+            else:
+                partition['input_data_size'] = partition['input_height'] * partition['input_width'] * partition['input_channel']
             partition['workload_size'] *= partition['output_height'] / layer_info['output_height']
             partition['memory'] *= partition['output_height'] / layer_info['output_height']
             output_data_location += [partition['layer_name'] for _ in range(partition['output_height'])]
             min_unit_partitions.append(partition)
         return min_unit_partitions, output_data_location
 
-    def fc_partitioning(self, layer_info, num_partitions, min_unit):
+    def fc_partitioning(self, layer_info, num_partitions, min_unit, piece_idx_start):
         min_unit_partitions = []
         for idx in range(num_partitions):
             partition = deepcopy(layer_info)
             partition['layer_name'] = layer_info['layer_name'] + '_{:d}'.format(idx)
-            partition['partition_idx'] = idx
+            partition['piece_idx'] = piece_idx_start + idx
             partition['original_layer_name'] = layer_info['layer_name']
             partition['input_height'] = 1
             partition['input_width'] = 1
@@ -65,12 +90,14 @@ class DAGDataSet:
             min_unit_partitions.append(partition)
         return min_unit_partitions
 
-    def data_gen(self, net_manager=None, svc_arrival=None, apply_partition=None, layer_coarsening=True):
+    def data_gen(self, net_manager=None, svc_arrival=None, apply_partition=None, layer_coarsening=False):
         self.service_info = [deepcopy(config.service_info[i]) for i in range(self.num_services)]
         system_manager = SystemManager()
 
         # create service set
         svc_set = ServiceSet()
+        layer_idx_start = 0
+        piece_idx_start = 0
         for dnn in self.service_info:
             svc = Service(dnn['model_name'], dnn['deadline'])
             
@@ -93,13 +120,15 @@ class DAGDataSet:
             if layer_coarsening:
                 pop_lst = []
                 for layer_info in dnn['layers']:
+                    if dnn['model_name'] == 'ResNet-50' and layer_info['layer_name'] == 'fully_connected':
+                        layer_info['is_first_fc'] = True
                     if layer_info['layer_type'] == 'maxpool' or layer_info['layer_type'] == 'avgpool':
                         pop_lst.append(layer_info)
                         pred_layer = None
                         succ_layer = None
 
                         # 만약 predecessor가 1개면
-                        if len(layer_info['predecessors']) == 1:
+                        if len(layer_info['predecessors']) == 1 and len(layer_info['successors']) > 1:
                             for pred_info in dnn['layers']:
                                 if layer_info['layer_name'] in pred_info['successors']:
                                     pred_layer = pred_info
@@ -144,6 +173,52 @@ class DAGDataSet:
                                         pred_info['successors'][idx] = succ_layer['layer_name']
                             layer_info['layer_name'] = succ_layer['layer_name']
 
+                        # 예외처리
+                        elif len(layer_info['predecessors']) == 1 and len(layer_info['successors']) == 1 and layer_info['layer_name'] in ['maxpool1', 'maxpool2', 'maxpool3']:
+                            for pred_info in dnn['layers']:
+                                if layer_info['layer_name'] in pred_info['successors']:
+                                    pred_layer = pred_info
+                                    layer_info['input_height'] = pred_info['input_height']
+                                    layer_info['input_width'] = pred_info['input_width']
+                                    layer_info['input_channel'] = pred_info['input_channel']
+                                    layer_info['predecessors'] = pred_info['predecessors']
+                                    layer_info['input_data_size'] = pred_info['input_data_size']
+                                    pred_info['workload_size'] += layer_info['workload_size']
+                                    pred_info['memory'] += layer_info['memory']
+                                    pred_info['output_height'] = layer_info['output_height']
+                                    pred_info['output_width'] = layer_info['output_width']
+                                    pred_info['output_channel'] = layer_info['output_channel']
+                                    pred_info['successors'] = layer_info['successors']
+                                    pred_info['output_data_size'] = layer_info['output_data_size']
+                            for succ_info in dnn['layers']:
+                                for idx, l_name in enumerate(succ_info['predecessors']):
+                                    if layer_info['layer_name'] == l_name:
+                                        succ_info['predecessors'][idx] = pred_layer['layer_name']
+                            layer_info['layer_name'] = pred_layer['layer_name']
+
+                        # 예외처리
+                        elif len(layer_info['predecessors']) == 1 and len(layer_info['successors']) == 1 and layer_info['layer_name'] == 'inception3a_branch4_maxpool1':
+                            for succ_info in dnn['layers']:
+                                if layer_info['layer_name'] in succ_info['predecessors']:
+                                    succ_layer = succ_info
+                                    layer_info['output_height'] = succ_info['output_height']
+                                    layer_info['output_width'] = succ_info['output_width']
+                                    layer_info['output_channel'] = succ_info['output_channel']
+                                    layer_info['successors'] = succ_info['successors']
+                                    layer_info['output_data_size'] = succ_info['output_data_size']
+                                    succ_info['workload_size'] += layer_info['workload_size']
+                                    succ_info['memory'] += layer_info['memory']
+                                    succ_info['input_height'] = layer_info['input_height']
+                                    succ_info['input_width'] = layer_info['input_width']
+                                    succ_info['input_channel'] = layer_info['input_channel']
+                                    succ_info['predecessors'] = layer_info['predecessors']
+                                    succ_info['input_data_size'] = layer_info['input_data_size']
+                            for pred_info in dnn['layers']:
+                                for idx, l_name in enumerate(pred_info['successors']):
+                                    if layer_info['layer_name'] == l_name:
+                                        pred_info['successors'][idx] = succ_layer['layer_name']
+                            layer_info['layer_name'] = succ_layer['layer_name']
+
                 for pop_layer in pop_lst:
                     dnn['layers'].remove(pop_layer)
 
@@ -151,44 +226,47 @@ class DAGDataSet:
             if self.apply_partition:
                 partitioned_layers = []
                 for layer_idx, layer_info in enumerate(dnn['layers']):
-                    layer_info['layer_idx'] = layer_idx
+                    layer_info['layer_idx'] = layer_idx + layer_idx_start
                     if layer_info['layer_type'] in ['cnn','maxpool']:
                         if dnn['model_name'] == 'GoogLeNet':
-                            num_partitions = 6
+                            num_partitions = 3 # partiton size 6
                             min_unit = max(math.floor(layer_info['output_height'] / num_partitions), 1)
-                            num_partitions = math.floor(layer_info['output_height'] / min_unit)
-                        elif dnn['model_name'] == 'AlexNet':
-                            num_partitions = 6
-                            min_unit = max(math.floor(layer_info['output_height'] / num_partitions), 1)
-                            num_partitions = math.floor(layer_info['output_height'] / min_unit)
                             if layer_info['layer_name'] == 'conv1':
-                                min_unit -= 1
+                                min_unit -= 1 # partiton size 0
                         elif dnn['model_name'] == 'ResNet-50':
-                            num_partitions = 7
+                            num_partitions = 3 # partiton size 7
                             min_unit = max(math.floor(layer_info['output_height'] / num_partitions), 1)
-                            num_partitions = math.floor(layer_info['output_height'] / min_unit)
+                            if layer_info['layer_name'] == 'conv1':
+                                min_unit -= 1 # partiton size 0
+                        elif dnn['model_name'] == 'AlexNet':
+                            num_partitions = 3 # partiton size 6
+                            min_unit = max(math.floor(layer_info['output_height'] / num_partitions), 1)
+                            if layer_info['layer_name'] == 'conv1':
+                                min_unit -= 0 # partiton size 1
                         else:
                             min_unit = 1
 
-                        min_unit_partitions, output_data_location = self.cnn_partitioning(layer_info, num_partitions=num_partitions, min_unit=min_unit)
+                        min_unit_partitions, output_data_location = self.cnn_partitioning(layer_info, num_partitions=num_partitions, min_unit=min_unit, piece_idx_start=piece_idx_start)
                         partitioned_layers.append({'layer_name':layer_info['layer_name'], 'layer_type':layer_info['layer_type'], 'min_unit_partitions':min_unit_partitions, 'output_data_location':output_data_location})
                     elif layer_info['layer_type'] in ['fc','avgpool']:
                         if dnn['model_name'] == 'GoogLeNet':
-                            num_partitions = 6
-                            min_unit = max(math.floor(layer_info['input_height'] * layer_info['input_width'] * layer_info['input_channel'] / num_partitions), 1)
-                        elif dnn['model_name'] == 'AlexNet':
-                            num_partitions = 6
+                            num_partitions = 3 # partiton size 6
                             min_unit = max(math.floor(layer_info['input_height'] * layer_info['input_width'] * layer_info['input_channel'] / num_partitions), 1)
                         elif dnn['model_name'] == 'ResNet-50':
-                            num_partitions = 7
+                            num_partitions = 3 # partiton size 7
+                            min_unit = max(math.floor(layer_info['input_height'] * layer_info['input_width'] * layer_info['input_channel'] / num_partitions), 1)
+                        elif dnn['model_name'] == 'AlexNet':
+                            num_partitions = 3 # partiton size 6
                             min_unit = max(math.floor(layer_info['input_height'] * layer_info['input_width'] * layer_info['input_channel'] / num_partitions), 1)
                         else:
                             min_unit = 256
 
-                        min_unit_partitions = self.fc_partitioning(layer_info, num_partitions=num_partitions, min_unit=min_unit)
+                        min_unit_partitions = self.fc_partitioning(layer_info, num_partitions=num_partitions, min_unit=min_unit, piece_idx_start=piece_idx_start)
                         partitioned_layers.append({'layer_name':layer_info['layer_name'], 'layer_type':layer_info['layer_type'], 'min_unit_partitions':min_unit_partitions})
                     else:
                         partitioned_layers.append(layer_info)
+                piece_idx_start += num_partitions
+
                 # predecessor recalculation for the minimum unit partitions
                 partitions = []
                 for layer_info in partitioned_layers:
@@ -237,7 +315,7 @@ class DAGDataSet:
                                     pred_layer = next(l for l in partitioned_layers if l['layer_name'] == pred_layer_name)
                                     if pred_layer['layer_type'] in ['cnn','maxpool']:
                                         for pred_partition in pred_layer['min_unit_partitions']:
-                                            if pred_partition['partition_idx'] == partition['partition_idx']:
+                                            if pred_partition['piece_idx'] == partition['piece_idx']:
                                                 predecessors.append(pred_partition['layer_name'])
                                                 input_data_size.append(pred_partition['output_height'] * pred_partition['output_width'] * pred_partition['output_channel'] * 4)
                                     else:
@@ -276,8 +354,9 @@ class DAGDataSet:
                     svc.partitions.append(Partition(svc_set=svc_set, service=svc, **partition))
             else:
                 for layer_idx, layer_info in enumerate(dnn['layers']):
-                    layer_info['layer_idx'] = layer_idx
+                    layer_info['layer_idx'] = layer_idx + layer_idx_start
                     svc.partitions.append(Partition(svc_set=svc_set, service=svc, **layer_info))
+            layer_idx_start += len(dnn['layers'])
 
             svc_set.add_services(svc)
 
@@ -325,8 +404,8 @@ class DAGDataSet:
 
 
         # create arrival rate table
-        self.max_arrival = 30
-        self.min_arrival = 30
+        self.max_arrival = 10
+        self.min_arrival = 10
 
         if svc_arrival is None:
             svc_arrival = list()
@@ -369,11 +448,11 @@ class DAGDataSet:
 
         # create network manager
         if net_manager == None:
-            net_manager = NetworkManager(channel_bandwidth=1024*1024*40, channel_gain=1, gaussian_noise=1, B_edge_up=1024*1024*12.5, B_edge_down=1024*1024*50, B_cloud_up=1024*1024*1024, B_cloud_down=1024*1024*1024, request=request, local=local, edge=edge, cloud=cloud)
+            net_manager = NetworkManager(channel_bandwidth=1024*1024*12.5, channel_gain=1, gaussian_noise=1, B_edge_up=1024*1024*12.5, B_edge_down=1024*1024*12.5, B_cloud_up=1024*1024*1024, B_cloud_down=1024*1024*1024, request=request, local=local, edge=edge, cloud=cloud)
             net_manager.P_dd = np.zeros(shape=(self.num_servers, self.num_servers))
             for i in range(self.num_servers):
                 for j in range(i + 1, self.num_servers):
-                    net_manager.P_dd[i, j] = net_manager.P_dd[j, i] = random.uniform(0.5, 1)
+                    net_manager.P_dd[i, j] = net_manager.P_dd[j, i] = random.uniform(0.8, 1.2)
                 net_manager.P_dd[i, i] = 0
             net_manager.cal_b_dd()
             net_manager.P_dd /= 5
@@ -386,21 +465,6 @@ class DAGDataSet:
         system_manager.num_partitions = self.num_partitions
         system_manager.set_service_set(svc_set, svc_arrival)
         system_manager.set_servers(request, local, edge, cloud)
-
-        system_manager.calc_average()
-
-        system_manager.rank_u = np.zeros(self.num_partitions)
-        for svc in svc_set.services:
-            for partition in svc.partitions:
-                system_manager.calc_rank_u_average(partition)
-
-        system_manager.rank_ready = np.zeros(self.num_partitions)
-        for svc in svc_set.services:
-            for partition in svc.partitions:
-                system_manager.calc_rank_ready_average(partition)
-
-        system_manager.calculate_schedule()
-
         return svc_set, system_manager
 
     def horizontal_partitioning(self):
@@ -415,7 +479,7 @@ class DAGDataSet:
 
             horizontal_partition = dict()
             if self.service_info[svc.id]['model_name'] == 'GoogLeNet':
-                num_neuron_partitions = 6
+                num_neuron_partitions = 3 # partiton size 6
                 for i in range(num_neuron_partitions):
                     horizontal_partition[i] = []
                 for l in self.service_info[svc.id]['layers']:
@@ -432,7 +496,7 @@ class DAGDataSet:
                             cg[p_id] = i
 
             elif self.service_info[svc.id]['model_name'] == 'AlexNet':
-                num_neuron_partitions = 6
+                num_neuron_partitions = 3 # partiton size 6
                 for i in range(num_neuron_partitions):
                     horizontal_partition[i] = []
                 for l in self.service_info[svc.id]['layers']:
@@ -449,7 +513,7 @@ class DAGDataSet:
                             cg[p_id] = i
 
             elif self.service_info[svc.id]['model_name'] == 'ResNet-50':
-                num_neuron_partitions = 7
+                num_neuron_partitions = 3 # partiton size 7
                 for i in range(num_neuron_partitions):
                     horizontal_partition[i] = []
                 for l in self.service_info[svc.id]['layers']:

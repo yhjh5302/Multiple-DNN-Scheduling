@@ -90,43 +90,86 @@ class SystemManager():
         self.cloud_id = None
         self.timeslot = 0
         self.rank_u = None
-        self.rank_ready = None
-        self.rank_oct = None
+        self.rank_d = None
+        self.optimistic_cost_table = None
 
-        self.scheduling_policy = 'EFT' # 'FCFS', 'EFT', 'OCT', 'noschedule'
-        self.FCFS_schedule = None
-        self.EFT_schedule = None
+        self.scheduling_policy = 'rank_u' # 'rank_u', 'rank_d', 'rank_oct', 'earliest', 'noschedule'
+        self.rank_u_schedule = None
+        self.rank_d_schedule = None
+        self.rank_oct_schedule = None
 
     def calculate_schedule(self):
         num_partitions = len(self.service_set.partitions)
-    
-        # execution_order calculation, FCFS
-        self.rank_ready = np.zeros(num_partitions)
-        for partition in self.service_set.partitions:
-            if len(partition.successors) == 0:
-                self.calc_rank_ready_total_average(partition)
-        self.FCFS_schedule = np.array(np.array(sorted(zip(self.rank_ready, np.arange(num_partitions)), reverse=False), dtype=np.int32)[:,1], dtype=np.int32)
 
-        # execution_order calculation, EFT
+        # execution_order calculation, rank_u
         self.rank_u = np.zeros(num_partitions)
         for partition in self.service_set.partitions:
             if len(partition.predecessors) == 0:
                 self.calc_rank_u_total_average(partition)
-        self.EFT_schedule = np.array(np.array(sorted(zip(self.rank_u, np.arange(num_partitions)), reverse=True), dtype=np.int32)[:,1], dtype=np.int32)
+        self.rank_u_schedule = np.array(np.array(sorted(zip(self.rank_u, np.arange(num_partitions)), reverse=True), dtype=np.int32)[:,1], dtype=np.int32)
+    
+        # execution_order calculation, rank_d
+        self.rank_d = np.zeros(num_partitions)
+        for partition in self.service_set.partitions:
+            if len(partition.successors) == 0:
+                self.calc_rank_d_total_average(partition)
+        self.rank_d_schedule = np.array(np.array(sorted(zip(self.rank_d, np.arange(num_partitions)), reverse=False), dtype=np.int32)[:,1], dtype=np.int32)
 
-        # execution_order calculation, OCT
-        self.rank_oct = np.zeros(num_partitions)
+    def calculate_rank_oct_schedule(self, server_lst):
+        # calculate optimistic cost table
+        num_servers = len(server_lst)
+        num_partitions = len(self.service_set.partitions)
+        self.optimistic_cost_table = np.zeros(shape=(num_partitions, num_servers))
         for partition in self.service_set.partitions:
             if len(partition.predecessors) == 0:
-                self.calc_rank_oct_total_average(partition)
-        self.OCT_schedule = np.array(np.array(sorted(zip(self.rank_oct, np.arange(num_partitions)), reverse=True), dtype=np.int32)[:,1], dtype=np.int32)
+                for s_idx in range(num_servers):
+                    self.calc_optimistic_cost_table(partition, s_idx, server_lst)
+        rank_oct = np.mean(self.optimistic_cost_table, axis=1)
+        self.rank_oct_schedule = np.array(np.array(sorted(zip(rank_oct, np.arange(num_partitions)), reverse=True), dtype=np.int32)[:,1], dtype=np.int32)
+        self.scheduling_policy = 'rank_oct'
 
-    def constraint_chk(self, deployed_server, execution_order=None, s_id=None):
-        self.set_env(deployed_server=deployed_server, execution_order=execution_order)
+    def constraint_chk(self, s_id=None):
         if s_id != None:
-            return self.server[s_id].constraint_chk()
+            # return self.server[s_id].constraint_chk()
+            if len(np.where(self.deployed_server==s_id)[0]) > 0:
+                server = self.server[s_id]
+                idx = np.where(self.deployed_server==s_id)
+                memory_consumption = sum(self.partition_memory_map[idx])
+                
+                if s_id in self.local or s_id in self.request:
+                    node_weight = self.computation_time_table[idx, s_id].flatten() * self.partition_arrival_map[idx]
+                    edge_weight = dag_completion_time.get_edge_energy_weight(self.num_servers, self.num_servers-2, self.num_servers-1, s_id, self.net_manager.B_edge_up, self.net_manager.B_edge_down, self.net_manager.B_cloud_up, self.net_manager.B_cloud_down, self.net_manager.memory_bandwidth, self.deployed_server, self.service_set.input_data_size, self.net_manager.B_dd.flatten(), self.net_manager.P_dd.flatten(), self.partition_arrival_map)
+
+                    E_cp = sum(node_weight) * (server.max_energy_consumption - server.min_energy_consumption) * server.tau
+                    E_tr = edge_weight * server.tau
+                    energy_consumption = E_cp + E_tr
+                else:
+                    energy_consumption = 0.
+                return (memory_consumption <= server.memory) and (energy_consumption <= server.cur_energy)
+            else:
+                return True
         else:
-            return [s.constraint_chk() for s in self.server.values()]
+            # return [s.constraint_chk() for s in self.server.values()]
+            constraint_chk = []
+            for s_id in self.server.keys():
+                if len(np.where(self.deployed_server==s_id)[0]) > 0:
+                    server = self.server[s_id]
+                    idx = np.where(self.deployed_server==s_id)
+                    memory_consumption = sum(self.partition_memory_map[idx])
+                    
+                    if s_id in self.local or s_id in self.request:
+                        node_weight = self.computation_time_table[idx, s_id].flatten() * self.partition_arrival_map[idx]
+                        edge_weight = dag_completion_time.get_edge_energy_weight(self.num_servers, self.num_servers-2, self.num_servers-1, s_id, self.net_manager.B_edge_up, self.net_manager.B_edge_down, self.net_manager.B_cloud_up, self.net_manager.B_cloud_down, self.net_manager.memory_bandwidth, self.deployed_server, self.service_set.input_data_size, self.net_manager.B_dd.flatten(), self.net_manager.P_dd.flatten(), self.partition_arrival_map)
+
+                        E_cp = sum(node_weight) * (server.max_energy_consumption - server.min_energy_consumption) * server.tau
+                        E_tr = edge_weight * server.tau
+                        energy_consumption = E_cp + E_tr
+                    else:
+                        energy_consumption = 0.
+                    constraint_chk.append((memory_consumption <= server.memory) and (energy_consumption <= server.cur_energy))
+                else:
+                    constraint_chk.append(True)
+            return constraint_chk
 
     def set_service_set(self, service_set, arrival):
         self.service_set = service_set
@@ -158,38 +201,28 @@ class SystemManager():
             result[svc.id] = max(self.finish_time[start:end])
         return result
 
-    def get_completion_time_partition(self, p_id, finish_time, ready_time):
+    def get_completion_time_partition(self, p_id, finish_time=None, ready_time=None):
         num_partitions = len(self.service_set.partitions)
-        if finish_time is None and ready_time is None:
+        if finish_time is None:
             finish_time = np.zeros(num_partitions)
+        if ready_time is None:
             ready_time = np.zeros(num_partitions)
-            for idx, predecessors in self.service_set.partition_predecessor.items():
-                if len(predecessors) == 0:
-                    ready_time[idx] = self.net_manager.communication(self.service_set.input_data_size[(idx,idx)], self.partition_device_map[idx], self.deployed_server[idx])
+        if ready_time[p_id] == 0 and len(self.service_set.partition_predecessor[p_id]) == 0:
+            ready_time[p_id] = self.net_manager.communication(self.service_set.input_data_size[(p_id,p_id)], self.partition_device_map[p_id], self.deployed_server[p_id])
+        elif ready_time[p_id] == 0:
+            TR_n = 0.
+            for pred_id in self.service_set.partition_predecessor[p_id]:
+                if finish_time[pred_id] > 0:
+                    TF_p = finish_time[pred_id]
+                else:
+                    raise RuntimeError("Error: predecessor not finish, #{}".format(p_id, pred_id))
+                T_tr = self.net_manager.communication(self.service_set.input_data_size[(pred_id,p_id)], self.deployed_server[pred_id], self.deployed_server[p_id])
+                TR_n = max(TF_p + T_tr, TR_n)
+            ready_time[p_id] = TR_n
 
         task_ready_time = max(ready_time[p_id], max(finish_time[np.where(self.deployed_server==self.deployed_server[p_id])]))
         finish_time[p_id] = task_ready_time + self.service_set.partitions[p_id].get_computation_time()
-
-        for succ_id in self.service_set.partition_successor[p_id]:
-            if not False in [finish_time[pred_id] > 0 for pred_id in self.service_set.partition_predecessor[succ_id]]:
-                TR_n = self.net_manager.communication(self.service_set.input_data_size[(p_id,succ_id)], self.deployed_server[p_id], self.deployed_server[succ_id])
-                for pred_id in self.service_set.partition_predecessor[succ_id]:
-                    if finish_time[pred_id] > 0:
-                        TF_p = finish_time[pred_id]
-                    else:
-                        raise RuntimeError("Error: predecessor not finish, #{}".format(succ_id))
-                    T_tr = self.net_manager.communication(self.service_set.input_data_size[(pred_id,succ_id)], self.deployed_server[pred_id], self.deployed_server[succ_id])
-                    TR_n = max(TF_p + T_tr, TR_n)
-                ready_time[succ_id] = TR_n
         return finish_time, ready_time
-
-        # num_partitions = len(self.service_set.partitions)
-
-        # node_weight = np.array([self.computation_time_table[partition.total_id][self.deployed_server[partition.total_id]] for partition in self.service_set.partitions])
-        # edge_weight = dag_completion_time.get_edge_weight(self.num_servers, self.num_servers-2, self.num_servers-1, self.net_manager.B_edge_up, self.net_manager.B_edge_down, self.net_manager.B_cloud_up, self.net_manager.B_cloud_down, self.net_manager.memory_bandwidth, self.deployed_server, self.partition_device_map, self.service_set.input_data_size, self.net_manager.B_dd.flatten())
-
-        # finish_time = dag_completion_time.get_completion_time_partition(p_id, num_partitions, self.deployed_server, self.execution_order, node_weight, edge_weight, self.service_set.partition_predecessor, self.service_set.partition_successor)
-        # return finish_time
 
     def set_servers(self, request, local, edge, cloud):
         self.request = request
@@ -227,27 +260,38 @@ class SystemManager():
             execution_order = np.array(execution_order, dtype=np.int32)
         else:
             # execution_order calculation, FCFS
-            if self.scheduling_policy == 'FCFS':
-                execution_order = self.FCFS_schedule
+            if self.scheduling_policy == 'rank_d':
+                execution_order = self.rank_d_schedule
 
             # execution_order calculation, EFT
-            elif self.scheduling_policy == 'EFT':
-                execution_order = self.EFT_schedule
+            elif self.scheduling_policy == 'rank_u':
+                execution_order = self.rank_u_schedule
 
-            # execution_order calculation, EFT
-            elif self.scheduling_policy == 'OCT':
-                execution_order = self.OCT_schedule
+            # execution_order calculation, PEFT
+            elif self.scheduling_policy == 'rank_oct':
+                execution_order = self.rank_oct_schedule
+
+            # execution_order calculation, earliest
+            elif self.scheduling_policy == 'earliest':
+                num_partitions = len(self.service_set.partitions)
+                self.rank_u = np.zeros(num_partitions)
+                for partition in self.service_set.partitions:
+                    if len(partition.successors) == 0:
+                        self.calc_rank_u_total(partition)
+                execution_order = np.array(np.array(sorted(zip(self.rank_u, np.arange(num_partitions)), reverse=True), dtype=np.int32)[:,1], dtype=np.int32)
 
             # execution_order calculation, noschedule
             elif self.scheduling_policy == 'noschedule':
                 num_partitions = len(self.service_set.partitions)
-                self.rank_ready = np.zeros(num_partitions)
+                self.rank_d = np.zeros(num_partitions)
                 for partition in self.service_set.partitions:
                     if len(partition.successors) == 0:
-                        self.calc_rank_ready_total(partition)
-                execution_order = np.array(np.array(sorted(zip(self.rank_ready, np.arange(num_partitions)), reverse=False), dtype=np.int32)[:,1], dtype=np.int32)
+                        self.calc_rank_d_total(partition)
+                execution_order = np.array(np.array(sorted(zip(self.rank_d, np.arange(num_partitions)), reverse=False), dtype=np.int32)[:,1], dtype=np.int32)
 
-        self.execution_order = execution_order
+        self.execution_order = np.zeros_like(execution_order)
+        for idx, k in enumerate(execution_order):
+            self.execution_order[k] = idx
 
     def get_reward(self):
         T_n = self.total_time_dp()
@@ -304,28 +348,15 @@ class SystemManager():
             communication_cost.append(c_ij + self.rank_u[succ.id])
         self.rank_u[partition.id] = w_i + max(communication_cost)
 
-    def calc_rank_ready_average(self, partition):    # rank_ready for heft
+    def calc_rank_d_average(self, partition):    # rank_d for heft
         pred_rank = [0,]
         for pred in partition.predecessors:
             w_j = pred.workload_size / self.average_computing_power
             c_ij = partition.get_input_data_size(pred) / self.average_bandwidth
-            if self.rank_ready[pred.id] == 0:
-                self.calc_rank_ready_average(pred)
-            pred_rank.append(w_j + c_ij + self.rank_ready[pred.id])
-        self.rank_ready[partition.id] = max(pred_rank)
-
-    def calc_rank_oct_average(self, partition):    # rank_oct for heft
-        w_i = partition.workload_size / self.average_computing_power
-        succ_communication_cost = [0,]
-        for succ in partition.successors:
-            c_ij = partition.get_output_data_size(succ) / self.average_bandwidth
-            if self.rank_oct[succ.id] == 0:
-                self.calc_rank_oct_average(succ)
-            succ_communication_cost.append(c_ij + self.rank_oct[succ.id])
-        pred_communication_cost = [0,]
-        for pred in partition.predecessors:
-            pred_communication_cost.append(partition.get_input_data_size(pred) / self.average_bandwidth)
-        self.rank_oct[partition.id] = w_i + max(succ_communication_cost) + max(pred_communication_cost)
+            if self.rank_d[pred.id] == 0:
+                self.calc_rank_d_average(pred)
+            pred_rank.append(w_j + c_ij + self.rank_d[pred.id])
+        self.rank_d[partition.id] = max(pred_rank)
 
     def calc_rank_u(self, partition):    # rank_u for heft
         w_i = partition.get_computation_time()
@@ -337,28 +368,15 @@ class SystemManager():
             communication_cost.append(c_ij + self.rank_u[succ.id])
         self.rank_u[partition.id] = w_i + max(communication_cost)
 
-    def calc_rank_ready(self, partition):    # rank_ready for heft
+    def calc_rank_d(self, partition):    # rank_d for heft
         pred_rank = [0,]
         for pred in partition.predecessors:
             w_j = pred.get_computation_time()
             c_ij = self.net_manager.communication(partition.get_input_data_size(pred), pred.deployed_server.id, partition.deployed_server.id)
-            if self.rank_ready[pred.id] == 0:
-                self.calc_rank_ready(pred)
-            pred_rank.append(w_j + c_ij + self.rank_ready[pred.id])
-        self.rank_ready[partition.id] = max(pred_rank)
-
-    def calc_rank_oct(self, partition):    # rank_oct for heft
-        w_i = partition.get_computation_time()
-        succ_communication_cost = [0,]
-        for succ in partition.successors:
-            c_ij = self.net_manager.communication(partition.get_output_data_size(succ), partition.deployed_server.id, succ.deployed_server.id)
-            if self.rank_oct[succ.id] == 0:
-                self.calc_rank_oct(succ)
-            succ_communication_cost.append(c_ij + self.rank_oct[succ.id])
-        pred_communication_cost = [0,]
-        for pred in partition.predecessors:
-            pred_communication_cost.append(self.net_manager.communication(partition.get_input_data_size(pred), pred.deployed_server.id, partition.deployed_server.id))
-        self.rank_oct[partition.id] = w_i + max(succ_communication_cost) + max(pred_communication_cost)
+            if self.rank_d[pred.id] == 0:
+                self.calc_rank_d(pred)
+            pred_rank.append(w_j + c_ij + self.rank_d[pred.id])
+        self.rank_d[partition.id] = max(pred_rank)
 
     def calc_rank_u_total_average(self, partition):    # rank_u for heft
         w_i = partition.workload_size / self.average_computing_power
@@ -370,28 +388,32 @@ class SystemManager():
             communication_cost.append(c_ij + self.rank_u[succ.total_id])
         self.rank_u[partition.total_id] = w_i + max(communication_cost)
 
-    def calc_rank_ready_total_average(self, partition):    # rank_ready for heft
+    def calc_rank_d_total_average(self, partition):    # rank_d for heft
         pred_rank = [0,]
         for pred in partition.predecessors:
             w_j = pred.workload_size / self.average_computing_power
             c_ij = partition.get_input_data_size(pred) / self.average_bandwidth
-            if self.rank_ready[pred.total_id] == 0:
-                self.calc_rank_ready_total_average(pred)
-            pred_rank.append(w_j + c_ij + self.rank_ready[pred.total_id])
-        self.rank_ready[partition.total_id] = max(pred_rank)
+            if self.rank_d[pred.total_id] == 0:
+                self.calc_rank_d_total_average(pred)
+            pred_rank.append(w_j + c_ij + self.rank_d[pred.total_id])
+        self.rank_d[partition.total_id] = max(pred_rank)
 
-    def calc_rank_oct_total_average(self, partition):    # rank_oct for heft
-        w_i = partition.workload_size / self.average_computing_power
-        succ_communication_cost = [0,]
+    def calc_optimistic_cost_table(self, partition, s_idx, server_lst):    # rank_oct for peft
+        s_id = server_lst[s_idx]
+        t_j_lst = [0,]
         for succ in partition.successors:
-            c_ij = partition.get_output_data_size(succ) / self.average_bandwidth
-            if self.rank_oct[succ.total_id] == 0:
-                self.calc_rank_oct_total_average(succ)
-            succ_communication_cost.append(c_ij + self.rank_oct[succ.total_id])
-        pred_communication_cost = [0,]
-        for pred in partition.predecessors:
-            pred_communication_cost.append(partition.get_input_data_size(pred) / self.average_bandwidth)
-        self.rank_oct[partition.total_id] = w_i + max(succ_communication_cost) + max(pred_communication_cost)
+            p_w_lst = [np.inf]
+            for succ_s_idx, succ_s_id in enumerate(server_lst):
+                server = self.server[succ_s_id]
+                w_jw = succ.workload_size * server.computing_intensity[succ.service.id] / server.computing_frequency
+                c_ij = self.net_manager.communication(partition.get_output_data_size(succ), s_id, succ_s_id)
+                oct_jw = self.optimistic_cost_table[succ.total_id, succ_s_idx]
+                if oct_jw == 0:
+                    self.calc_optimistic_cost_table(succ, succ_s_idx, server_lst)
+                    oct_jw = self.optimistic_cost_table[succ.total_id, succ_s_idx]
+                p_w_lst.append(oct_jw + w_jw + c_ij)
+            t_j_lst.append(min(p_w_lst))
+        self.optimistic_cost_table[partition.total_id, s_idx] = max(t_j_lst)
 
     def calc_rank_u_total(self, partition):    # rank_u for heft
         w_i = partition.get_computation_time()
@@ -403,28 +425,15 @@ class SystemManager():
             communication_cost.append(c_ij + self.rank_u[succ.total_id])
         self.rank_u[partition.total_id] = w_i + max(communication_cost)
 
-    def calc_rank_ready_total(self, partition):    # rank_ready for heft
+    def calc_rank_d_total(self, partition):    # rank_d for heft
         pred_rank = [0,]
         for pred in partition.predecessors:
-            w_i = pred.get_computation_time()
+            w_j = pred.get_computation_time()
             c_ij = self.net_manager.communication(partition.get_input_data_size(pred), pred.deployed_server.id, partition.deployed_server.id)
-            if self.rank_ready[pred.total_id] == 0:
-                self.calc_rank_ready_total(pred)
-            pred_rank.append(w_i + c_ij + self.rank_ready[pred.total_id])
-        self.rank_ready[partition.total_id] = max(pred_rank)
-
-    def calc_rank_oct_total(self, partition):    # rank_oct for heft
-        w_i = partition.get_computation_time()
-        succ_communication_cost = [0,]
-        for succ in partition.successors:
-            c_ij = self.net_manager.communication(partition.get_output_data_size(succ), partition.deployed_server.id, succ.deployed_server.id)
-            if self.rank_oct[succ.total_id] == 0:
-                self.calc_rank_oct_total(succ)
-            succ_communication_cost.append(c_ij + self.rank_oct[succ.total_id])
-        pred_communication_cost = [0,]
-        for pred in partition.predecessors:
-            pred_communication_cost.append(self.net_manager.communication(partition.get_input_data_size(pred), pred.deployed_server.id, partition.deployed_server.id))
-        self.rank_oct[partition.total_id] = w_i + max(succ_communication_cost) + max(pred_communication_cost)
+            if self.rank_d[pred.total_id] == 0:
+                self.calc_rank_d_total(pred)
+            pred_rank.append(w_j + c_ij + self.rank_d[pred.total_id])
+        self.rank_d[partition.total_id] = max(pred_rank)
 
 
 TYPE_CHAIN = 0
@@ -617,7 +626,7 @@ class Server:
         for c in self.deployed_partition.values():
             E_tr_dnm = 0.
             for succ in c.successors:
-                T_tr = self.system_manager.net_manager.communication(c.get_output_data_size(succ), self.system_manager.deployed_server[c.id], self.system_manager.deployed_server[succ.id])
-                E_tr_dnm += self.system_manager.net_manager.P_dd[self.system_manager.deployed_server[c.id], self.system_manager.deployed_server[succ.id]] * T_tr
+                T_tr = self.system_manager.net_manager.communication(c.get_output_data_size(succ), self.system_manager.deployed_server[c.total_id], self.system_manager.deployed_server[succ.total_id])
+                E_tr_dnm += self.system_manager.net_manager.P_dd[self.system_manager.deployed_server[c.total_id], self.system_manager.deployed_server[succ.total_id]] * T_tr
             E_tr_d += E_tr_dnm * c.service.arrival * self.tau
         return E_tr_d

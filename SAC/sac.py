@@ -1,4 +1,5 @@
 import numpy as np
+import time
 
 import torch
 import torch.nn as nn
@@ -28,15 +29,16 @@ def SAC(num_states, num_actions, env, dataset):
     AUTO_ENTROPY=True
     DETERMINISTIC=False
     rewards = []
-    model_path = 'outputs/model/sac_v2_lstm'
+    model_path = './model/sac_v2_lstm'
 
-    replay_buffer_size = 10000
+    replay_buffer_size = 1000
     replay_buffer = ReplayBufferLSTM(replay_buffer_size)
     sac_trainer = SAC_Trainer(replay_buffer, num_states, num_actions, hidden_dim=hidden_dim, action_range=1.)
 
     if args.train:
         # training loop
         for eps in range(max_episodes):
+            start = time.time()
             state, last_action = env.reset()
 
             episode_state = []
@@ -64,8 +66,8 @@ def SAC(num_states, num_actions, env, dataset):
 
                 state = next_state
                 last_action = action
-                frame_idx += 1
                 
+                # update
                 if len(replay_buffer) > batch_size:
                     for i in range(update_itr):
                         _ = sac_trainer.update(batch_size, reward_scale=10., auto_entropy=AUTO_ENTROPY, target_entropy=-1.*num_actions)
@@ -79,7 +81,8 @@ def SAC(num_states, num_actions, env, dataset):
                 plot(rewards)
                 np.save('rewards_lstm', rewards)
                 sac_trainer.save_model(model_path)
-            print('Episode: ', eps, '| Episode Reward: ', np.sum(episode_reward))
+            print("episode took:", time.time() - start)
+            print('Episode: ', eps, '| Episode Reward: ', np.sum(episode_reward), max(dataset.system_manager.total_time_dp()))
             rewards.append(np.sum(episode_reward))
         sac_trainer.save_model(model_path)
 
@@ -115,6 +118,7 @@ class SAC_Trainer():
         
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.replay_buffer = replay_buffer
+        print("state_dim", state_dim, "action_dim", action_dim, "device", self.device)
 
         self.soft_q_net1 = QNetworkLSTM(state_dim, action_dim, hidden_dim).to(self.device)
         self.soft_q_net2 = QNetworkLSTM(state_dim, action_dim, hidden_dim).to(self.device)
@@ -134,7 +138,7 @@ class SAC_Trainer():
         self.soft_q_criterion2 = nn.MSELoss()
 
         soft_q_lr = 3e-4
-        policy_lr = 3e-4
+        policy_lr = 1e-4
         alpha_lr  = 3e-4
 
         self.soft_q_optimizer1 = optim.Adam(self.soft_q_net1.parameters(), lr=soft_q_lr)
@@ -143,7 +147,7 @@ class SAC_Trainer():
         self.alpha_optimizer = optim.Adam([self.log_alpha], lr=alpha_lr)
 
     
-    def update(self, batch_size, reward_scale=10., auto_entropy=True, target_entropy=-2, gamma=0.99,soft_tau=1e-2):
+    def update(self, batch_size, reward_scale=10., auto_entropy=True, target_entropy=-2, gamma=0.99, soft_tau=5e-3):
         hidden_in, hidden_out, state, action, last_action, reward, next_state, done = self.replay_buffer.sample(batch_size)
         # print('sample:', state, action,  reward, done)
 
@@ -169,7 +173,7 @@ class SAC_Trainer():
             self.alpha_optimizer.step()
             self.alpha = self.log_alpha.exp()
         else:
-            self.alpha = 0.2
+            self.alpha = 1.
             alpha_loss = 0
 
     # Training Q Function

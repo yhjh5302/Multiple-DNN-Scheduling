@@ -32,7 +32,6 @@ class PolicyNetworkBase(nn.Module):
 class SAC_PolicyNetworkLSTM(PolicyNetworkBase):
     def __init__(self, state_dim, action_dim, hidden_size, action_range=1., init_w=3e-3, log_std_min=-20, log_std_max=2):
         super().__init__(state_dim, action_dim, action_range=action_range)
-        print("ss", self._state_dim, self._action_dim)
         
         self.log_std_min = log_std_min
         self.log_std_max = log_std_max
