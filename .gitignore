@@ -157,3 +157,7 @@ runs/
 *.bin
 *.json
 !svc_save.bin
+rewards_lstm.npy
+*.png
+model/
+.vscode/

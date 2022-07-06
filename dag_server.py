@@ -45,23 +45,13 @@ class NetworkManager:  # managing data transfer
         else:
             return amount / self.B_dd[sender, receiver]
 
-    def cal_b_dd(self):
+    def cal_b_dd(self, num_servers=1):
         self.B_dd = np.zeros_like(self.P_dd)
         for i in range(self.B_dd.shape[0]):
             for j in range(i + 1, self.B_dd.shape[1]):
                 SINR = self.g_wd * self.P_dd[i, j] / (self.sigma_w ** 2)
-                self.B_dd[i, j] = self.B_dd[j, i] = self.C * math.log2(1 + SINR)
+                self.B_dd[i, j] = self.B_dd[j, i] = self.C * math.log2(1 + SINR) / num_servers
             self.B_dd[i, i] = float("inf")
-
-    def get_b_dd(self):
-        B_dd = np.zeros_like(self.B_dd)
-        for i in range(B_dd.shape[0]):
-            for j in range(B_dd.shape[1]):
-                if self.B_dd[i, j] == float("inf"):
-                    B_dd[i, j] = -1
-                else:
-                    B_dd[i, j] = self.B_dd[i, j]
-        return B_dd
 
 
 class SystemManager():
@@ -335,7 +325,7 @@ class SystemManager():
 
     def calc_average(self):
         bandwidth = self.net_manager.B_dd
-        self.average_bandwidth = np.mean(bandwidth[bandwidth < 1024*1024*100])
+        self.average_bandwidth = np.mean(bandwidth[bandwidth < 1024*1024*1000])
         self.average_computing_power = np.mean(np.transpose([self.computing_frequency] * self.computing_intensity.shape[1]) / self.computing_intensity)
 
     def calc_rank_u_average(self, partition):    # rank_u for heft

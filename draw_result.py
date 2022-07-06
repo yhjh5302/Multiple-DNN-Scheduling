@@ -3,7 +3,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 # Get results by the number of services
-def by_num_service(local_result, edge_result, heft_u_result, heft_d_result, cpop_result, peft_result, greedy_u_result, greedy_d_result, greedy_psoga_result, greedy_genetic_result, psoga_result, genetic_result, greedy_psoga_eval_lst, greedy_genetic_eval_lst, psoga_eval_lst, genetic_eval_lst, greedy_psoga_took_lst, greedy_genetic_took_lst, psoga_took_lst, genetic_took_lst, server_low, server_high, server_step, num_services):
+def by_num_service(local_result, edge_result, heft_u_result, heft_d_result, cpop_result, peft_result, layerwise_heft_u_result, layerwise_heft_d_result, layerwise_cpop_result, layerwise_peft_result, greedy_u_result, greedy_d_result, greedy_psoga_result, greedy_genetic_result, psoga_result, genetic_result, greedy_psoga_eval_lst, greedy_genetic_eval_lst, psoga_eval_lst, genetic_eval_lst, greedy_psoga_took_lst, greedy_genetic_took_lst, psoga_took_lst, genetic_took_lst, server_low, server_high, server_step, num_services):
     # [0,1,2]: 0 - num_devices, 1 - num_loop, 2 - [time,energy,reward]
     
     # algorithms = ['User Device', 'Edge', 'CPOP', 'PEFT', 'HEFT-U', 'HEFT-D', 'Greedy-U', 'Greedy-D', 'Genetic', 'PSO-GA']
@@ -64,6 +64,14 @@ def by_num_service(local_result, edge_result, heft_u_result, heft_d_result, cpop
             avg = np.array(cpop_result)[:,:,0] * 1000
         elif algorithm == 'PEFT':
             avg = np.array(peft_result)[:,:,0] * 1000
+        elif algorithm == 'Layerwise HEFT-U':
+            avg = np.array(layerwise_heft_u_result)[:,:,0] * 1000
+        elif algorithm == 'Layerwise HEFT-D':
+            avg = np.array(layerwise_heft_d_result)[:,:,0] * 1000
+        elif algorithm == 'Layerwise CPOP':
+            avg = np.array(layerwise_cpop_result)[:,:,0] * 1000
+        elif algorithm == 'Layerwise PEFT':
+            avg = np.array(layerwise_peft_result)[:,:,0] * 1000
         elif algorithm == 'Greedy-U':
             avg = np.array(greedy_u_result)[:,:,0] * 1000
         elif algorithm == 'Greedy-D':
@@ -121,6 +129,14 @@ def by_num_service(local_result, edge_result, heft_u_result, heft_d_result, cpop
             avg = np.array(cpop_result)[:,:,1]
         elif algorithm == 'PEFT':
             avg = np.array(peft_result)[:,:,1]
+        elif algorithm == 'Layerwise HEFT-U':
+            avg = np.array(layerwise_heft_u_result)[:,:,1]
+        elif algorithm == 'Layerwise HEFT-D':
+            avg = np.array(layerwise_heft_d_result)[:,:,1]
+        elif algorithm == 'Layerwise CPOP':
+            avg = np.array(layerwise_cpop_result)[:,:,1]
+        elif algorithm == 'Layerwise PEFT':
+            avg = np.array(layerwise_peft_result)[:,:,1]
         elif algorithm == 'Greedy-U':
             avg = np.array(greedy_u_result)[:,:,1]
         elif algorithm == 'Greedy-D':
@@ -176,6 +192,14 @@ def by_num_service(local_result, edge_result, heft_u_result, heft_d_result, cpop
             avg = np.array(cpop_result)[:,:,2]
         elif algorithm == 'PEFT':
             avg = np.array(peft_result)[:,:,2]
+        elif algorithm == 'Layerwise HEFT-U':
+            avg = np.array(layerwise_heft_u_result)[:,:,2]
+        elif algorithm == 'Layerwise HEFT-D':
+            avg = np.array(layerwise_heft_d_result)[:,:,2]
+        elif algorithm == 'Layerwise CPOP':
+            avg = np.array(layerwise_cpop_result)[:,:,2]
+        elif algorithm == 'Layerwise PEFT':
+            avg = np.array(layerwise_peft_result)[:,:,2]
         elif algorithm == 'Greedy-U':
             avg = np.array(greedy_u_result)[:,:,2]
         elif algorithm == 'Greedy-D':
@@ -254,7 +278,7 @@ def by_num_service(local_result, edge_result, heft_u_result, heft_d_result, cpop
     plt.clf()
 
 # Get results by the number of services
-def by_num_service_test(local_result, edge_result, heft_u_result, heft_d_result, cpop_result, peft_result, greedy_u_result, greedy_d_result, greedy_psoga_result, greedy_genetic_result, psoga_result, genetic_result, greedy_psoga_eval_lst, greedy_genetic_eval_lst, psoga_eval_lst, genetic_eval_lst, greedy_psoga_took_lst, greedy_genetic_took_lst, psoga_took_lst, genetic_took_lst, server_low, server_high, server_step, num_services):
+def by_num_service_test(local_result, edge_result, heft_u_result, heft_d_result, cpop_result, peft_result, layerwise_heft_u_result, layerwise_heft_d_result, layerwise_cpop_result, layerwise_peft_result, greedy_u_result, greedy_d_result, greedy_psoga_result, greedy_genetic_result, psoga_result, genetic_result, greedy_psoga_eval_lst, greedy_genetic_eval_lst, psoga_eval_lst, genetic_eval_lst, greedy_psoga_took_lst, greedy_genetic_took_lst, psoga_took_lst, genetic_took_lst, server_low, server_high, server_step, num_services):
     # [0,1,2]: 0 - num_devices, 1 - num_loop, 2 - [time,energy,reward]
     
     # algorithms = ['User Device', 'Edge', 'CPOP', 'PEFT', 'HEFT-U', 'HEFT-D', 'Greedy-U', 'Greedy-D', 'Genetic', 'PSO-GA']

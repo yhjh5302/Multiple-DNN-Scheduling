@@ -3,7 +3,6 @@ import numpy as np
 import random
 import config
 from dag_server import *
-from multilevel_graph_partitioning import MultiLevelGraphPartitioning
 
 
 # ([0-9]) # partiton size ([0-9])
@@ -20,6 +19,8 @@ class DAGDataSet:
             self.coarsened_graph = self.horizontal_partitioning()
         else:
             self.coarsened_graph = [np.arange(len(svc.partitions)) for svc in self.svc_set.services]
+
+        # 미리 계산이 필요한 정보들
         self.piece_device_map = np.array([idx for idx, cg in enumerate(self.coarsened_graph) for _ in np.unique(cg)])
         self.piece_service_map = np.array([idx for idx, cg in enumerate(self.coarsened_graph) for _ in np.unique(cg)])
         self.partition_device_map = np.array([idx for idx, cg in enumerate(self.coarsened_graph) for _ in cg])
@@ -29,7 +30,7 @@ class DAGDataSet:
         if apply_partition == 'horizontal':
             self.partition_piece_map = np.array([self.svc_set.partitions[idx].piece_idx for idx in range(self.num_partitions)])
         else:
-            self.partition_piece_map = np.zeros(self.num_partitions)
+            self.partition_piece_map = np.arange(self.num_partitions)
         self.partition_workload_map = np.array([self.svc_set.partitions[idx].workload_size for idx in range(self.num_partitions)])
         self.partition_memory_map = np.array([self.svc_set.partitions[idx].memory for idx in range(self.num_partitions)])
 
@@ -118,109 +119,24 @@ class DAGDataSet:
 
             # layer coarsening
             if layer_coarsening:
-                pop_lst = []
+                coarsen_lst = []
                 for layer_info in dnn['layers']:
                     if dnn['model_name'] == 'ResNet-50' and layer_info['layer_name'] == 'fully_connected':
                         layer_info['is_first_fc'] = True
                     if layer_info['layer_type'] == 'maxpool' or layer_info['layer_type'] == 'avgpool':
-                        pop_lst.append(layer_info)
-                        pred_layer = None
-                        succ_layer = None
+                        # 만약 predecessor가 1개이고, predecessor의 successor가 1개이고, 둘을 합쳤을 때 통신량이 감소하면
+                        if len(layer_info['predecessors']) == 1:
+                            predecessor = next(l for l in dnn['layers'] if l['layer_name'] == layer_info['predecessors'][0])
+                            if len(predecessor['successors']) == 1:
+                                coarsen_lst.append([])
 
-                        # 만약 predecessor가 1개면
-                        if len(layer_info['predecessors']) == 1 and len(layer_info['successors']) > 1:
-                            for pred_info in dnn['layers']:
-                                if layer_info['layer_name'] in pred_info['successors']:
-                                    pred_layer = pred_info
-                                    layer_info['input_height'] = pred_info['input_height']
-                                    layer_info['input_width'] = pred_info['input_width']
-                                    layer_info['input_channel'] = pred_info['input_channel']
-                                    layer_info['predecessors'] = pred_info['predecessors']
-                                    layer_info['input_data_size'] = pred_info['input_data_size']
-                                    pred_info['workload_size'] += layer_info['workload_size']
-                                    pred_info['memory'] += layer_info['memory']
-                                    pred_info['output_height'] = layer_info['output_height']
-                                    pred_info['output_width'] = layer_info['output_width']
-                                    pred_info['output_channel'] = layer_info['output_channel']
-                                    pred_info['successors'] = layer_info['successors']
-                                    pred_info['output_data_size'] = layer_info['output_data_size']
-                            for succ_info in dnn['layers']:
-                                for idx, l_name in enumerate(succ_info['predecessors']):
-                                    if layer_info['layer_name'] == l_name:
-                                        succ_info['predecessors'][idx] = pred_layer['layer_name']
-                            layer_info['layer_name'] = pred_layer['layer_name']
-
-                        # 만약 successor가 1개면 여기에 취합하고 앞에 애들 이름만 변경.
-                        elif len(layer_info['predecessors']) > 1 and len(layer_info['successors']) == 1:
-                            for succ_info in dnn['layers']:
-                                if layer_info['layer_name'] in succ_info['predecessors']:
-                                    succ_layer = succ_info
-                                    layer_info['output_height'] = succ_info['output_height']
-                                    layer_info['output_width'] = succ_info['output_width']
-                                    layer_info['output_channel'] = succ_info['output_channel']
-                                    layer_info['successors'] = succ_info['successors']
-                                    layer_info['output_data_size'] = succ_info['output_data_size']
-                                    succ_info['workload_size'] += layer_info['workload_size']
-                                    succ_info['memory'] += layer_info['memory']
-                                    succ_info['input_height'] = layer_info['input_height']
-                                    succ_info['input_width'] = layer_info['input_width']
-                                    succ_info['input_channel'] = layer_info['input_channel']
-                                    succ_info['predecessors'] = layer_info['predecessors']
-                                    succ_info['input_data_size'] = layer_info['input_data_size']
-                            for pred_info in dnn['layers']:
-                                for idx, l_name in enumerate(pred_info['successors']):
-                                    if layer_info['layer_name'] == l_name:
-                                        pred_info['successors'][idx] = succ_layer['layer_name']
-                            layer_info['layer_name'] = succ_layer['layer_name']
-
-                        # 예외처리
-                        elif len(layer_info['predecessors']) == 1 and len(layer_info['successors']) == 1 and layer_info['layer_name'] in ['maxpool1', 'maxpool2', 'maxpool3']:
-                            for pred_info in dnn['layers']:
-                                if layer_info['layer_name'] in pred_info['successors']:
-                                    pred_layer = pred_info
-                                    layer_info['input_height'] = pred_info['input_height']
-                                    layer_info['input_width'] = pred_info['input_width']
-                                    layer_info['input_channel'] = pred_info['input_channel']
-                                    layer_info['predecessors'] = pred_info['predecessors']
-                                    layer_info['input_data_size'] = pred_info['input_data_size']
-                                    pred_info['workload_size'] += layer_info['workload_size']
-                                    pred_info['memory'] += layer_info['memory']
-                                    pred_info['output_height'] = layer_info['output_height']
-                                    pred_info['output_width'] = layer_info['output_width']
-                                    pred_info['output_channel'] = layer_info['output_channel']
-                                    pred_info['successors'] = layer_info['successors']
-                                    pred_info['output_data_size'] = layer_info['output_data_size']
-                            for succ_info in dnn['layers']:
-                                for idx, l_name in enumerate(succ_info['predecessors']):
-                                    if layer_info['layer_name'] == l_name:
-                                        succ_info['predecessors'][idx] = pred_layer['layer_name']
-                            layer_info['layer_name'] = pred_layer['layer_name']
-
-                        # 예외처리
-                        elif len(layer_info['predecessors']) == 1 and len(layer_info['successors']) == 1 and layer_info['layer_name'] == 'inception3a_branch4_maxpool1':
-                            for succ_info in dnn['layers']:
-                                if layer_info['layer_name'] in succ_info['predecessors']:
-                                    succ_layer = succ_info
-                                    layer_info['output_height'] = succ_info['output_height']
-                                    layer_info['output_width'] = succ_info['output_width']
-                                    layer_info['output_channel'] = succ_info['output_channel']
-                                    layer_info['successors'] = succ_info['successors']
-                                    layer_info['output_data_size'] = succ_info['output_data_size']
-                                    succ_info['workload_size'] += layer_info['workload_size']
-                                    succ_info['memory'] += layer_info['memory']
-                                    succ_info['input_height'] = layer_info['input_height']
-                                    succ_info['input_width'] = layer_info['input_width']
-                                    succ_info['input_channel'] = layer_info['input_channel']
-                                    succ_info['predecessors'] = layer_info['predecessors']
-                                    succ_info['input_data_size'] = layer_info['input_data_size']
-                            for pred_info in dnn['layers']:
-                                for idx, l_name in enumerate(pred_info['successors']):
-                                    if layer_info['layer_name'] == l_name:
-                                        pred_info['successors'][idx] = succ_layer['layer_name']
-                            layer_info['layer_name'] = succ_layer['layer_name']
-
-                for pop_layer in pop_lst:
-                    dnn['layers'].remove(pop_layer)
+                        # 만약 successor가 1개이고, successor의 predecessor가 1개이면, 둘을 합쳤을 때 통신량이 감소하면
+                        elif len(layer_info['successors']) == 1:
+                            successor = next(l for l in dnn['layers'] if l['layer_name'] == layer_info['successors'][0])
+                            if len(successor['predecessors']) == 1:
+                                coarsen_lst.append([])
+            else:
+                coarsen_lst = None
 
             # just partitioning layers into minimum unit partitions
             if self.apply_partition:
@@ -348,6 +264,8 @@ class DAGDataSet:
                         pred_partition['output_data_size'].append(partition['input_data_size'][ith])
                 # create partitions
                 for partition in partitions:
+                    print(partition)
+                    input()
                     if len(partition['predecessors']) == 0 and len(partition['successors']) == 0:
                         print(partition['layer_name'], 'has no predecessor and successor node. so deleted from DAG')
                         continue
@@ -455,7 +373,6 @@ class DAGDataSet:
                     net_manager.P_dd[i, j] = net_manager.P_dd[j, i] = random.uniform(0.8, 1.2)
                 net_manager.P_dd[i, i] = 0
             net_manager.cal_b_dd()
-            net_manager.P_dd /= 5
 
         # init system manager
         system_manager.net_manager = net_manager

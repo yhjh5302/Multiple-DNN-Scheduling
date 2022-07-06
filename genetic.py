@@ -39,10 +39,12 @@ class Layerwise_PSOGA:
         w = self.w_max - (self.w_max - self.w_min) * np.exp(ps / (ps - 1.01))
         return w
 
-    def generate_random_solutions(self, step=10):
+    def generate_random_solutions(self, greedy_solution=None, step=0):
         # server = np.random.choice(self.server_lst, size=(self.num_particles, self.num_timeslots, self.num_partitions))
         # server = np.full(shape=(self.num_particles, self.num_timeslots, self.num_partitions), fill_value=self.server_lst[-1])
         # server = np.array([[self.dataset.piece_device_map for _ in range(self.num_timeslots)] for _ in range(0, self.num_particles)])
+        if greedy_solution is not None:
+            return np.array([greedy_solution for _ in range(self.num_particles)])
         server = np.zeros((self.num_particles, self.num_timeslots, self.num_partitions))
         server[:step,:,:] = np.full(shape=(step, self.num_timeslots, self.num_partitions), fill_value=self.server_lst[-1])
         server[step:,:,:] = np.random.choice(self.server_lst, size=(self.num_particles-step, self.num_timeslots, self.num_partitions))
@@ -50,16 +52,13 @@ class Layerwise_PSOGA:
         action = np.concatenate([server, order], axis=2)
         return action
 
-    def run_algo(self, loop, verbose=True, local_search=True, random_solution=None):
+    def run_algo(self, loop, verbose=True, local_search=True, greedy_solution=None):
         start = time.time()
         max_reward = -np.inf
         not_changed_loop = 0
         eval_lst = []
 
-        if random_solution is None:
-            x_t = self.generate_random_solutions()
-        else:
-            x_t = random_solution
+        x_t = self.generate_random_solutions(greedy_solution)
         x_t = self.reparation(x_t)
         p_t, g_t, p_t_eval_lst = self.selection(x_t)
 
@@ -75,7 +74,7 @@ class Layerwise_PSOGA:
             if max_reward < np.max(np.sum(p_t_eval_lst, axis=1)):
                 max_reward = np.max(np.sum(p_t_eval_lst, axis=1))
                 not_changed_loop = 0
-            elif not_changed_loop > 50:
+            elif not_changed_loop > 100:
                 self.system_manager.set_env(deployed_server=g_t[0,:self.num_partitions], execution_order=g_t[0,self.num_partitions:])
                 t = self.system_manager.total_time_dp()
                 e = [s.energy_consumption() for s in list(self.system_manager.request.values()) + list(self.system_manager.local.values()) + list(self.system_manager.edge.values())]
@@ -376,7 +375,7 @@ class PSOGA:
         print("took:", time.time() - start)
         return x
 
-    def generate_random_solutions(self, step=2):
+    def generate_random_solutions(self, greedy_solution=None, step=2):
         return np.random.choice(self.server_lst, size=(self.num_particles, self.num_timeslots, self.num_pieces))
         # return np.full(shape=(self.num_particles, self.num_timeslots, self.num_pieces), fill_value=self.server_lst[-1])
         # return np.array([[self.dataset.piece_device_map for _ in range(self.num_timeslots)] for _ in range(0, self.num_particles)])
@@ -429,16 +428,13 @@ class PSOGA:
         action[local_idx] = np.array(temp)
         return action
 
-    def run_algo(self, loop, verbose=True, local_search=True, second_local_search=True, random_solution=None):
+    def run_algo(self, loop, verbose=True, local_search=True, second_local_search=True, greedy_solution=None):
         start = time.time()
         max_reward = -np.inf
         not_changed_loop = 0
         eval_lst = []
 
-        if random_solution is None:
-            x_t = self.generate_random_solutions()
-        else:
-            x_t = random_solution
+        x_t = self.generate_random_solutions(greedy_solution)
         x_t = self.reparation(x_t)
         if local_search:
             x_t = self.local_search(x_t, local_prob=0.5)
@@ -693,7 +689,7 @@ class Genetic(PSOGA):
         self.mutation_ratio = mutation_ratio
         self.cross_over_ratio = cross_over_ratio
 
-    def generate_random_solutions(self, step=2):
+    def generate_random_solutions(self, greedy_solution=None, step=2):
         return np.random.choice(self.server_lst, size=(self.num_solutions, self.num_timeslots, self.num_pieces))
         # return np.full(shape=(self.num_solutions, self.num_timeslots, self.num_pieces), fill_value=self.server_lst[-1])
         # return np.array([[self.dataset.piece_device_map for _ in range(self.num_timeslots)] for _ in range(0, self.num_solutions)])
@@ -706,16 +702,13 @@ class Genetic(PSOGA):
         random_solutions[end:self.num_solutions,:,:] = np.random.choice(self.server_lst, size=(self.num_solutions-end, self.num_timeslots, self.num_pieces))
         return random_solutions
 
-    def run_algo(self, loop, verbose=True, local_search=True, second_local_search=True, random_solution=None):
+    def run_algo(self, loop, verbose=True, local_search=True, second_local_search=True, greedy_solution=None):
         start = time.time()
         max_reward = -np.inf
         not_changed_loop = 0
         eval_lst = []
 
-        if random_solution is None:
-            p_t = self.generate_random_solutions()
-        else:
-            p_t = random_solution
+        p_t = self.generate_random_solutions(greedy_solution)
         p_t = self.reparation(p_t)
 
         p_known = np.copy(p_t)
