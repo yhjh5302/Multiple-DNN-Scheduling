@@ -12,17 +12,18 @@ MEM_RATIO = 1024 # memory usage per input data (1 KB)
 
 
 class NetworkManager:  # managing data transfer
-    def __init__(self, channel_bandwidth, channel_gain, gaussian_noise, B_edge_up, B_edge_down, B_cloud_up, B_cloud_down, request, local, edge, cloud):
+    def __init__(self, channel_bandwidth, gaussian_noise, B_edge_up, B_edge_down, B_cloud_up, B_cloud_down, request, local, edge, cloud):
         self.C = channel_bandwidth
-        self.g_wd = channel_gain
-        self.sigma_w = gaussian_noise
-        self.request_device = [0,1,2,3,4,5,6,7,8]
+        self.N_0 = gaussian_noise
+        self.request_device = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14]
+        self.original_bandwidth = [B_edge_up, B_edge_down, B_cloud_up, B_cloud_down]
         self.B_edge_up = B_edge_up
         self.B_edge_down = B_edge_down
         self.B_cloud_up = B_cloud_up
         self.B_cloud_down = B_cloud_down
         self.B_dd = None
-        self.P_dd = None
+        self.P_d = None
+        self.g_dd = None
 
         self.request = list(request.keys())
         self.local = list(local.keys())
@@ -45,13 +46,17 @@ class NetworkManager:  # managing data transfer
         else:
             return amount / self.B_dd[sender, receiver]
 
-    def cal_b_dd(self, num_servers=1):
-        self.B_dd = np.zeros_like(self.P_dd)
+    def cal_b_dd(self):
+        self.B_dd = np.zeros_like(self.g_dd)
         for i in range(self.B_dd.shape[0]):
             for j in range(i + 1, self.B_dd.shape[1]):
-                SINR = self.g_wd * self.P_dd[i, j] / (self.sigma_w ** 2)
-                self.B_dd[i, j] = self.B_dd[j, i] = self.C * math.log2(1 + SINR) / num_servers
+                SINR = (self.g_dd[i,j] * self.P_d[i]) / (self.N_0)
+                self.B_dd[i, j] = self.B_dd[j, i] = self.C * math.log2(1 + SINR)
             self.B_dd[i, i] = float("inf")
+
+    def bandwidth_change(self, num_request=1):
+        self.cal_b_dd()
+        self.B_dd = self.B_dd / num_request
 
 
 class SystemManager():
@@ -114,8 +119,8 @@ class SystemManager():
             if len(partition.predecessors) == 0:
                 for s_idx in range(num_servers):
                     self.calc_optimistic_cost_table(partition, s_idx, server_lst)
-        rank_oct = np.mean(self.optimistic_cost_table, axis=1)
-        self.rank_oct_schedule = np.array(np.array(sorted(zip(rank_oct, np.arange(num_partitions)), reverse=True), dtype=np.int32)[:,1], dtype=np.int32)
+        self.rank_oct = np.mean(self.optimistic_cost_table, axis=1)
+        self.rank_oct_schedule = np.array(np.array(sorted(zip(self.rank_oct, np.arange(num_partitions)), reverse=True), dtype=np.int32)[:,1], dtype=np.int32)
         self.scheduling_policy = 'rank_oct'
 
     def constraint_chk(self, s_id=None):
@@ -128,7 +133,7 @@ class SystemManager():
                 
                 if s_id in self.local or s_id in self.request:
                     node_weight = self.computation_time_table[idx, s_id].flatten() * self.partition_arrival_map[idx]
-                    edge_weight = dag_completion_time.get_edge_energy_weight(self.num_servers, self.num_servers-2, self.num_servers-1, s_id, self.net_manager.B_edge_up, self.net_manager.B_edge_down, self.net_manager.B_cloud_up, self.net_manager.B_cloud_down, self.net_manager.memory_bandwidth, self.deployed_server, self.service_set.input_data_size, self.net_manager.B_dd.flatten(), self.net_manager.P_dd.flatten(), self.partition_arrival_map)
+                    edge_weight = dag_completion_time.get_edge_energy_weight(self.num_servers, self.num_servers-2, self.num_servers-1, s_id, self.net_manager.B_edge_up, self.net_manager.B_edge_down, self.net_manager.B_cloud_up, self.net_manager.B_cloud_down, self.net_manager.memory_bandwidth, self.deployed_server, self.service_set.input_data_size, self.net_manager.B_dd.flatten(), self.net_manager.P_d, self.partition_arrival_map)
 
                     E_cp = sum(node_weight) * (server.max_energy_consumption - server.min_energy_consumption) * server.tau
                     E_tr = edge_weight * server.tau
@@ -149,7 +154,7 @@ class SystemManager():
                     
                     if s_id in self.local or s_id in self.request:
                         node_weight = self.computation_time_table[idx, s_id].flatten() * self.partition_arrival_map[idx]
-                        edge_weight = dag_completion_time.get_edge_energy_weight(self.num_servers, self.num_servers-2, self.num_servers-1, s_id, self.net_manager.B_edge_up, self.net_manager.B_edge_down, self.net_manager.B_cloud_up, self.net_manager.B_cloud_down, self.net_manager.memory_bandwidth, self.deployed_server, self.service_set.input_data_size, self.net_manager.B_dd.flatten(), self.net_manager.P_dd.flatten(), self.partition_arrival_map)
+                        edge_weight = dag_completion_time.get_edge_energy_weight(self.num_servers, self.num_servers-2, self.num_servers-1, s_id, self.net_manager.B_edge_up, self.net_manager.B_edge_down, self.net_manager.B_cloud_up, self.net_manager.B_cloud_down, self.net_manager.memory_bandwidth, self.deployed_server, self.service_set.input_data_size, self.net_manager.B_dd.flatten(), self.net_manager.P_d, self.partition_arrival_map)
 
                         E_cp = sum(node_weight) * (server.max_energy_consumption - server.min_energy_consumption) * server.tau
                         E_tr = edge_weight * server.tau
@@ -617,6 +622,6 @@ class Server:
             E_tr_dnm = 0.
             for succ in c.successors:
                 T_tr = self.system_manager.net_manager.communication(c.get_output_data_size(succ), self.system_manager.deployed_server[c.total_id], self.system_manager.deployed_server[succ.total_id])
-                E_tr_dnm += self.system_manager.net_manager.P_dd[self.system_manager.deployed_server[c.total_id], self.system_manager.deployed_server[succ.total_id]] * T_tr
+                E_tr_dnm += self.system_manager.net_manager.P_d[self.system_manager.deployed_server[c.total_id]] * T_tr
             E_tr_d += E_tr_dnm * c.service.arrival * self.tau
         return E_tr_d

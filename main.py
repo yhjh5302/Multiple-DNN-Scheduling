@@ -1,11 +1,12 @@
 import numpy as np
 from dag_data_generator import DAGDataSet
-from genetic import Genetic, Layerwise_PSOGA, Greedy, HEFT, CPOP, PEFT
+from genetic import Genetic, PSOGA, Layerwise_PSOGA, HEFT, CPOP, PEFT, Greedy
 from operator import itemgetter
 import time
 import sys
 import draw_result
 import pickle
+import argparse
 
 
 
@@ -51,6 +52,16 @@ if __name__=="__main__":
     print('recursion limit', sys.getrecursionlimit())
     sys.setrecursionlimit(10000)
 
+    parser = argparse.ArgumentParser(description="_")
+    parser.add_argument('--service_low', type=int, default=3, help="_")
+    parser.add_argument('--service_high', type=int, default=9, help="_")
+    parser.add_argument('--service_step', type=int, default=1, help="_")
+    parser.add_argument('--server_low', type=int, default=0, help="_")
+    parser.add_argument('--server_high', type=int, default=10, help="_")
+    parser.add_argument('--server_step', type=int, default=2, help="_")
+    parser.add_argument('--bandwidth_ratio', type=float, default=1.0, help="_")
+    args = parser.parse_args()
+
     test_num_services = 1
     test_num_servers = 10
     
@@ -69,42 +80,64 @@ if __name__=="__main__":
 
     result_by_services = []
 
-    service_low = 6
-    service_high = 9
-    service_step = 1
+    service_low = args.service_low
+    service_high = args.service_high
+    service_step = args.service_step
     for num_services in range(service_low, service_high+1, service_step):
         print(":::::::::: M ==", num_services, "::::::::::\n")
-    
+
         local_result = []
         edge_result = []
-        heft_u_result = []
-        heft_d_result = []
+        heft_result = []
         cpop_result = []
         peft_result = []
-        layerwise_heft_u_result = []
-        layerwise_heft_d_result = []
+        greedy_result = []
+        layerwise_heft_result = []
         layerwise_cpop_result = []
         layerwise_peft_result = []
-        greedy_u_result = []
-        greedy_d_result = []
-
-        greedy_psoga_result = []
-        greedy_genetic_result = []
+        layerwise_psoga_result = []
+        layerwise_genetic_result = []
         psoga_result = []
         genetic_result = []
 
-        greedy_psoga_eval_lst = []
-        greedy_genetic_eval_lst = []
+        layerwise_psoga_eval_lst = []
+        layerwise_genetic_eval_lst = []
         psoga_eval_lst = []
         genetic_eval_lst = []
 
-        greedy_psoga_took_lst = []
-        greedy_genetic_took_lst = []
+        local_took_lst = []
+        edge_took_lst = []
+        heft_took_lst = []
+        cpop_took_lst = []
+        peft_took_lst = []
+        greedy_took_lst = []
+        layerwise_heft_took_lst = []
+        layerwise_cpop_took_lst = []
+        layerwise_peft_took_lst = []
+        layerwise_psoga_took_lst = []
+        layerwise_genetic_took_lst = []
         psoga_took_lst = []
         genetic_took_lst = []
 
+        local_action_lst = []
+        edge_action_lst = []
+        heft_action_lst = []
+        cpop_action_lst = []
+        peft_action_lst = []
+        greedy_action_lst = []
+        layerwise_heft_action_lst = []
+        layerwise_cpop_action_lst = []
+        layerwise_peft_action_lst = []
+        layerwise_psoga_action_lst = []
+        layerwise_genetic_action_lst = []
+        psoga_action_lst = []
+        genetic_action_lst = []
+
         dataset = DAGDataSet(num_timeslots=1, num_services=num_services, net_manager=test_dataset.system_manager.net_manager, apply_partition='horizontal')
-        layerwise_dataset = DAGDataSet(num_timeslots=1, num_services=num_services, net_manager=test_dataset.system_manager.net_manager, apply_partition=False)
+        layerwise_dataset = DAGDataSet(num_timeslots=1, num_services=num_services, net_manager=test_dataset.system_manager.net_manager, apply_partition=False, layer_coarsening=False)
+        layerwise_coarsened_dataset = DAGDataSet(num_timeslots=1, num_services=num_services, net_manager=test_dataset.system_manager.net_manager, apply_partition=False, layer_coarsening=True)
+        dataset.system_manager.net_manager.bandwidth_change(args.bandwidth_ratio)
+        layerwise_dataset.system_manager.net_manager.bandwidth_change(args.bandwidth_ratio)
 
         dataset.system_manager.set_env(deployed_server=np.full(shape=dataset.num_partitions, fill_value=list(dataset.system_manager.request.keys())[0], dtype=np.int32))
         print("Raspberry Pi computation time", [sum([p.get_computation_time() for p in svc.partitions]) for svc in dataset.svc_set.services])
@@ -122,168 +155,167 @@ if __name__=="__main__":
         heft = HEFT(dataset=dataset)
         cpop = CPOP(dataset=dataset)
         peft = PEFT(dataset=dataset)
+        greedy = Greedy(dataset=dataset)
         layerwise_heft = HEFT(dataset=layerwise_dataset)
         layerwise_cpop = CPOP(dataset=layerwise_dataset)
         layerwise_peft = PEFT(dataset=layerwise_dataset)
-        greedy = Greedy(dataset=dataset)
-        psoga = Layerwise_PSOGA(dataset=layerwise_dataset, num_particles=50, w_max=0.8, w_min=0.2, c1_s=0.9, c1_e=0.2, c2_s=0.4, c2_e=0.9)
+        layerwise_psoga = Layerwise_PSOGA(dataset=layerwise_coarsened_dataset, num_particles=100, w_max=0.8, w_min=0.2, c1_s=0.9, c1_e=0.2, c2_s=0.4, c2_e=0.9)
+        layerwise_genetic = Genetic(dataset=layerwise_coarsened_dataset, num_solutions=100, mutation_ratio=0.3, cross_over_ratio=0.7)
+        psoga = PSOGA(dataset=dataset, num_particles=50, w_max=0.8, w_min=0.2, c1_s=0.9, c1_e=0.2, c2_s=0.4, c2_e=0.9)
         genetic = Genetic(dataset=dataset, num_solutions=50, mutation_ratio=0.3, cross_over_ratio=0.7)
 
         result_by_servers = []
 
-        server_low = 6
-        server_high = 10
-        server_step = 2
+        server_low = args.server_low
+        server_high = args.server_high
+        server_step = args.server_step
         for num_servers in range(server_low, server_high+1, server_step):
             print(":::::::::: S ==", num_servers, "::::::::::\n")
-            dataset.system_manager.net_manager.cal_b_dd(num_servers+1)
-            layerwise_dataset.system_manager.net_manager.cal_b_dd(num_servers+1)
 
-            layerwise_heft.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys())
-            layerwise_cpop.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys())
-            layerwise_peft.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys())
-            heft.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys())
-            cpop.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys())
-            peft.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys())
-            greedy.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys())
-            genetic.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys())
-            psoga.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys())
+            layerwise_heft.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys()) # + [0]
+            layerwise_cpop.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys()) # + [0]
+            layerwise_peft.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys()) # + [0]
+            heft.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys()) # + [0]
+            cpop.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys()) # + [0]
+            peft.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys()) # + [0]
+            greedy.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys()) # + [0]
+            layerwise_genetic.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys()) # + [0]
+            layerwise_psoga.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys()) # + [0]
+            genetic.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys()) # + [0]
+            psoga.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys()) # + [0]
 
             dataset.system_manager.scheduling_policy = 'noschedule'
+            layerwise_dataset.system_manager.scheduling_policy = 'noschedule'
 
             start = time.time()
-            local_x_lst = [np.array([[dataset.system_manager.net_manager.request_device[p.service.id] for p in dataset.svc_set.partitions] for t in range(dataset.num_timeslots)])]
+            local_x_lst = [np.array([[layerwise_dataset.system_manager.net_manager.request_device[p.service.id] for p in layerwise_dataset.svc_set.partitions] for t in range(layerwise_dataset.num_timeslots)])]
             local_took = [time.time() - start]
-            local_result.append(result(dataset, local_x_lst, took=local_took, algorithm_name="Local Only"))
+            local_result.append(result(layerwise_dataset, local_x_lst, took=local_took, algorithm_name="Local Only"))
 
             start = time.time()
-            edge_x_lst = [np.full(shape=(dataset.num_timeslots, dataset.num_partitions), fill_value=list(dataset.system_manager.edge.keys())[0], dtype=np.int32)]
+            edge_x_lst = [np.full(shape=(layerwise_dataset.num_timeslots, layerwise_dataset.num_partitions), fill_value=list(layerwise_dataset.system_manager.edge.keys())[0], dtype=np.int32)]
             edge_took = [time.time() - start]
-            edge_result.append(result(dataset, edge_x_lst, took=edge_took, algorithm_name="Edge Only"))
+            edge_result.append(result(layerwise_dataset, edge_x_lst, took=edge_took, algorithm_name="Edge Only"))
 
             heft.rank = 'rank_u'
             dataset.system_manager.scheduling_policy = 'rank_u'
 
             start = time.time()
             heft_x_lst = [heft.run_algo()]
+            heft_action_lst.append(heft_x_lst)
             heft_took = [time.time() - start]
-            heft_u_result.append(result(dataset, heft_x_lst, took=heft_took, algorithm_name="HEFT-U Algorithm (M={}, D={})".format(num_services, num_servers)))
+            heft_took_lst.append(heft_took)
+            heft_result.append(result(dataset, heft_x_lst, took=heft_took, algorithm_name="Hybrid HEFT Algorithm (M={}, D={})".format(num_services, num_servers)))
 
-            # heft.rank = 'rank_d'
-            # dataset.system_manager.scheduling_policy = 'rank_d'
-
-            # start = time.time()
-            # heft_x_lst = [heft.run_algo()]
-            # heft_took = [time.time() - start]
-            # heft_d_result.append(result(dataset, heft_x_lst, took=heft_took, algorithm_name="HEFT-D Algorithm (M={}, D={})".format(num_services, num_servers)))
-
-            dataset.system_manager.scheduling_policy = 'rank_u' # meaningless
-
-            start = time.time()
-            cpop_x_lst = [cpop.run_algo()]
-            cpop_took = [time.time() - start]
-            cpop_result.append(result(dataset, cpop_x_lst, took=cpop_took, algorithm_name="CPOP Algorithm (M={}, D={})".format(num_services, num_servers)))
-
-            dataset.system_manager.scheduling_policy = 'rank_u' # meaningless
-
-            start = time.time()
-            peft_x_lst = [peft.run_algo()]
-            peft_took = [time.time() - start]
-            peft_result.append(result(dataset, peft_x_lst, took=peft_took, algorithm_name="PEFT Algorithm (M={}, D={})".format(num_services, num_servers)))
-
-            # greedy.rank = 'rank_u'
             # dataset.system_manager.scheduling_policy = 'rank_u'
 
             # start = time.time()
-            # greedy_x_lst = [greedy.run_algo_piecewise()]
-            # greedy_took = [time.time() - start]
-            # greedy_u_result.append(result(dataset, greedy_x_lst, took=greedy_took, algorithm_name="Greedy-U Algorithm (M={}, D={})".format(num_services, num_servers)))
+            # cpop_x_lst = [cpop.run_algo()]
+            # cpop_action_lst.append(cpop_x_lst)
+            # cpop_took = [time.time() - start]
+            # cpop_took_lst.append(cpop_took)
+            # cpop_result.append(result(dataset, cpop_x_lst, took=cpop_took, algorithm_name="Hybrid CPOP Algorithm (M={}, D={})".format(num_services, num_servers)))
 
-            # greedy.rank = 'rank_d'
-            # dataset.system_manager.scheduling_policy = 'rank_d'
+            # dataset.system_manager.scheduling_policy = 'rank_u'
 
             # start = time.time()
-            # greedy_x_lst = [greedy.run_algo_piecewise()]
-            # greedy_took = [time.time() - start]
-            # greedy_d_result.append(result(dataset, greedy_x_lst, took=greedy_took, algorithm_name="Greedy-D Algorithm (M={}, D={})".format(num_services, num_servers)))
+            # peft_x_lst = [peft.run_algo()]
+            # peft_action_lst.append(peft_x_lst)
+            # peft_took = [time.time() - start]
+            # peft_took_lst.append(peft_took)
+            # peft_result.append(result(dataset, peft_x_lst, took=peft_took, algorithm_name="Hybrid PEFT Algorithm (M={}, D={})".format(num_services, num_servers)))
+
+            # greedy.rank = 'rank_oct'
+            # dataset.system_manager.calculate_rank_oct_schedule(list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys()))
+            greedy.rank = 'rank_u'
+            dataset.system_manager.scheduling_policy = 'rank_u' # meaningless
+
+            start = time.time()
+            greedy_x_lst = [greedy.run_algo()]
+            greedy_action_lst.append(greedy_x_lst)
+            greedy_took = [time.time() - start]
+            greedy_took_lst.append(greedy_took)
+            greedy_result.append(result(dataset, greedy_x_lst, took=greedy_took, algorithm_name="Greedy Algorithm (M={}, D={})".format(num_services, num_servers)))
 
             layerwise_heft.rank = 'rank_u'
             layerwise_dataset.system_manager.scheduling_policy = 'rank_u'
 
             start = time.time()
             layerwise_heft_x_lst = [layerwise_heft.run_algo()]
+            layerwise_heft_action_lst.append(layerwise_heft_x_lst)
             layerwise_heft_took = [time.time() - start]
-            layerwise_heft_u_result.append(result(layerwise_dataset, layerwise_heft_x_lst, took=layerwise_heft_took, algorithm_name="Layerwise HEFT-U Algorithm (M={}, D={})".format(num_services, num_servers)))
+            layerwise_heft_took_lst.append(layerwise_heft_took)
+            layerwise_heft_result.append(result(layerwise_dataset, layerwise_heft_x_lst, took=layerwise_heft_took, algorithm_name="Vertical HEFT Algorithm (M={}, D={})".format(num_services, num_servers)))
 
-            # layerwise_heft.rank = 'rank_d'
-            # layerwise_dataset.system_manager.scheduling_policy = 'rank_d'
+            # layerwise_dataset.system_manager.scheduling_policy = 'rank_u' # meaningless
 
             # start = time.time()
-            # layerwise_heft_x_lst = [layerwise_heft.run_algo()]
-            # layerwise_heft_took = [time.time() - start]
-            # layerwise_heft_d_result.append(result(layerwise_dataset, layerwise_heft_x_lst, took=layerwise_heft_took, algorithm_name="Layerwise HEFT-D Algorithm (M={}, D={})".format(num_services, num_servers)))
+            # layerwise_cpop_x_lst = [layerwise_cpop.run_algo()]
+            # layerwise_cpop_action_lst.append(layerwise_cpop_x_lst)
+            # layerwise_cpop_took = [time.time() - start]
+            # layerwise_cpop_took_lst.append(layerwise_cpop_took)
+            # layerwise_cpop_result.append(result(layerwise_dataset, layerwise_cpop_x_lst, took=layerwise_cpop_took, algorithm_name="Vertical CPOP Algorithm (M={}, D={})".format(num_services, num_servers)))
 
-            layerwise_dataset.system_manager.scheduling_policy = 'rank_u' # meaningless
+            # layerwise_dataset.system_manager.scheduling_policy = 'rank_u' # meaningless
 
-            start = time.time()
-            layerwise_cpop_x_lst = [layerwise_cpop.run_algo()]
-            layerwise_cpop_took = [time.time() - start]
-            layerwise_cpop_result.append(result(layerwise_dataset, layerwise_cpop_x_lst, took=layerwise_cpop_took, algorithm_name="Layerwise CPOP Algorithm (M={}, D={})".format(num_services, num_servers)))
-
-            layerwise_dataset.system_manager.scheduling_policy = 'rank_u' # meaningless
-
-            start = time.time()
-            layerwise_peft_x_lst = [layerwise_peft.run_algo()]
-            layerwise_peft_took = [time.time() - start]
-            layerwise_peft_result.append(result(layerwise_dataset, layerwise_peft_x_lst, took=layerwise_peft_took, algorithm_name="Layerwise PEFT Algorithm (M={}, D={})".format(num_services, num_servers)))
-
-            # dataset.system_manager.init_env()
-            # dataset.system_manager.set_env(deployed_server=greedy_x_lst[0][0])
-            # deadline = dataset.system_manager.total_time_dp()
-            # for svc in dataset.svc_set.services:
-            #     svc.deadline = deadline[svc.id]
+            # start = time.time()
+            # layerwise_peft_x_lst = [layerwise_peft.run_algo()]
+            # layerwise_peft_action_lst.append(layerwise_peft_x_lst)
+            # layerwise_peft_took = [time.time() - start]
+            # layerwise_peft_took_lst.append(layerwise_peft_took)
+            # layerwise_peft_result.append(result(layerwise_dataset, layerwise_peft_x_lst, took=layerwise_peft_took, algorithm_name="Vertical PEFT Algorithm (M={}, D={})".format(num_services, num_servers)))
 
             iteration = 5
 
-            # dataset.system_manager.calculate_rank_oct_schedule(list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys()))
-            dataset.system_manager.scheduling_policy = 'rank_u' # rank_u, earliest
+            # layerwise_coarsened_dataset.system_manager.calculate_rank_oct_schedule(list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys()))
+            layerwise_coarsened_dataset.system_manager.scheduling_policy = 'rank_u' # rank_u, earliest
 
-            temp = [psoga.run_algo(loop=1000, verbose=False, local_search=False, greedy_solution=np.concatenate(layerwise_heft_x_lst[0], axis=1)) for _ in range(iteration)]
-            psoga_x_lst = [x for (x, e, t) in temp]
-            psoga_eval_lst.append([e for (x, e, t) in temp])
-            psoga_took = [t for (x, e, t) in temp]
-            psoga_took_lst.append(psoga_took)
-            psoga_result.append(sorted(result(layerwise_dataset, psoga_x_lst, took=psoga_took, algorithm_name="Layerwise PSO-GA Algorithm (M={}, D={})".format(num_services, num_servers)), key=itemgetter(2), reverse=True))
+            temp = [layerwise_psoga.run_algo(loop=1000, verbose=False, local_search=False, early_exit_loop=100) for _ in range(iteration)] # greedy_solution=[np.concatenate(layerwise_heft_x_lst[0], axis=1), np.concatenate(layerwise_cpop_x_lst[0], axis=1), np.concatenate(layerwise_peft_x_lst[0], axis=1)]
+            layerwise_psoga_x_lst = [x for (x, e, t) in temp]
+            layerwise_psoga_action_lst.append(layerwise_psoga_x_lst)
+            layerwise_psoga_eval_lst.append([e for (x, e, t) in temp])
+            layerwise_psoga_took = [t for (x, e, t) in temp]
+            layerwise_psoga_took_lst.append(layerwise_psoga_took)
+            layerwise_psoga_result.append(sorted(result(layerwise_coarsened_dataset, layerwise_psoga_x_lst, took=layerwise_psoga_took, algorithm_name="Vertical PSO-GA Algorithm (M={}, D={})".format(num_services, num_servers)), key=itemgetter(2), reverse=True))
 
-            temp = [genetic.run_algo(loop=50, verbose=False, local_search=True) for _ in range(iteration)]
-            genetic_x_lst = [x for (x, e, t) in temp]
-            genetic_eval_lst.append([e for (x, e, t) in temp])
-            genetic_took = [t for (x, e, t) in temp]
-            genetic_took_lst.append(genetic_took)
-            genetic_result.append(sorted(result(dataset, genetic_x_lst, took=genetic_took, algorithm_name="Memetic Algorithm (M={}, D={})".format(num_services, num_servers)), key=itemgetter(2), reverse=True))
+            # temp = [layerwise_psoga.run_algo(loop=1000, verbose=False, local_search=True, early_exit_loop=50) for _ in range(iteration)] # greedy_solution=[np.concatenate(layerwise_heft_x_lst[0], axis=1), np.concatenate(layerwise_cpop_x_lst[0], axis=1), np.concatenate(layerwise_peft_x_lst[0], axis=1)]
+            # psoga_x_lst = [x for (x, e, t) in temp]
+            # psoga_action_lst.append(psoga_x_lst)
+            # psoga_eval_lst.append([e for (x, e, t) in temp])
+            # psoga_took = [t for (x, e, t) in temp]
+            # psoga_took_lst.append(psoga_took)
+            # psoga_result.append(sorted(result(layerwise_coarsened_dataset, psoga_x_lst, took=psoga_took, algorithm_name="Hybrid PSO-GA Algorithm (M={}, D={})".format(num_services, num_servers)), key=itemgetter(2), reverse=True))
+
+            # temp = [layerwise_genetic.run_algo(loop=50, verbose=False, local_search=True, greedy_solution=layerwise_heft_x_lst[0][0], refinement=False, early_exit_loop=20) for _ in range(iteration)]
+            # layerwise_genetic_x_lst = [x for (x, e, t) in temp]
+            # layerwise_genetic_action_lst.append(layerwise_genetic_x_lst)
+            # layerwise_genetic_eval_lst.append([e for (x, e, t) in temp])
+            # layerwise_genetic_took = [t for (x, e, t) in temp]
+            # layerwise_genetic_took_lst.append(layerwise_genetic_took)
+            # layerwise_genetic_result.append(sorted(result(layerwise_coarsened_dataset, layerwise_genetic_x_lst, took=layerwise_genetic_took, algorithm_name="Layerwise Memetic Algorithm (M={}, D={})".format(num_services, num_servers)), key=itemgetter(2), reverse=True))
+
+            # temp = [psoga.run_algo(loop=300, verbose=1, local_search=True, refinement=True, early_exit_loop=30) for _ in range(iteration)]
+            # psoga_x_lst = [x for (x, e, t) in temp]
+            # psoga_action_lst.append(psoga_x_lst)
+            # psoga_eval_lst.append([e for (x, e, t) in temp])
+            # psoga_took = [t for (x, e, t) in temp]
+            # psoga_took_lst.append(psoga_took)
+            # psoga_result.append(sorted(result(dataset, psoga_x_lst, took=psoga_took, algorithm_name="Hybrid PSO-GA Algorithm (M={}, D={})".format(num_services, num_servers)), key=itemgetter(2), reverse=True))
+
+            # temp = [genetic.run_algo(loop=300, verbose=False, local_search=False, refinement=True, early_exit_loop=30) for _ in range(iteration)]
+            # genetic_x_lst = [x for (x, e, t) in temp]
+            # genetic_action_lst.append(genetic_x_lst)
+            # genetic_eval_lst.append([e for (x, e, t) in temp])
+            # genetic_took = [t for (x, e, t) in temp]
+            # genetic_took_lst.append(genetic_took)
+            # genetic_result.append(sorted(result(dataset, genetic_x_lst, took=genetic_took, algorithm_name="Hybrid Genetic Algorithm (M={}, D={})".format(num_services, num_servers)), key=itemgetter(2), reverse=True))
+            
+            with open("outputs/results_backup_service_{}_server_{}_bandwidth_{}".format(num_services, num_servers, args.bandwidth_ratio), "wb") as fp:
+                pickle.dump([local_result, edge_result, heft_result, cpop_result, peft_result, greedy_result, layerwise_heft_result, layerwise_cpop_result, layerwise_peft_result, layerwise_psoga_result, layerwise_genetic_result, psoga_result, genetic_result, layerwise_psoga_eval_lst, layerwise_genetic_eval_lst, psoga_eval_lst, genetic_eval_lst, local_took_lst, edge_took_lst, heft_took_lst, cpop_took_lst, peft_took_lst, greedy_took_lst, layerwise_heft_took_lst, layerwise_cpop_took_lst, layerwise_peft_took_lst, layerwise_psoga_took_lst, layerwise_genetic_took_lst, psoga_took_lst, genetic_took_lst, local_action_lst, edge_action_lst, heft_action_lst, cpop_action_lst, peft_action_lst, greedy_action_lst, layerwise_heft_action_lst, layerwise_cpop_action_lst, layerwise_peft_action_lst, layerwise_psoga_action_lst, layerwise_genetic_action_lst, psoga_action_lst, genetic_action_lst, server_low, server_high, server_step, num_services], fp)
 
         del heft
-        del greedy
+        del cpop
+        del peft
         del genetic
         del psoga
         del dataset
-        result_by_services.append([local_result, edge_result, heft_u_result, heft_d_result, cpop_result, peft_result, layerwise_heft_u_result, layerwise_heft_d_result, layerwise_cpop_result, layerwise_peft_result, greedy_u_result, greedy_d_result, greedy_psoga_result, greedy_genetic_result, psoga_result, genetic_result, greedy_psoga_eval_lst, greedy_genetic_eval_lst, psoga_eval_lst, genetic_eval_lst, greedy_psoga_took_lst, greedy_genetic_took_lst, psoga_took_lst, genetic_took_lst, server_low, server_high, server_step, num_services])
-        with open("outputs/results_backup_{}".format(num_services), "wb") as fp:
-            pickle.dump(result_by_services, fp)
-
-
-    replace = False
-    replace_service = 0
-    replace_server = 1
-    if replace:
-        with open("outputs/results_backup", "rb") as fp:
-            temp = pickle.load(fp)
-            temp[replace_service][replace_server] = result_by_services[0][0]
-        with open("outputs/results_backup", "wb") as fp:
-            pickle.dump(temp, fp)
-    else:
-        with open("outputs/results_backup", "wb") as fp:
-            pickle.dump(result_by_services, fp)
-
-    for result_by_servers in result_by_services:
-        draw_result.by_num_service(*result_by_servers)

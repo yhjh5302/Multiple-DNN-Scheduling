@@ -329,14 +329,14 @@ PyObject* get_edge_energy_weight(PyObject* self, PyObject* args) {
     // initialize
     int num_servers, edge_id, cloud_id, server_id;
     double B_edge_up, B_edge_down, B_cloud_up, B_cloud_down, memory_bandwidth;
-    PyObject *py_deployed_server, *py_input_data_size, *py_B_dd, *py_P_dd, *py_partition_arrival_map;
-    if (!PyArg_ParseTuple(args, "iiiidddddOOOOO", &num_servers, &edge_id, &cloud_id, &server_id, &B_edge_up, &B_edge_down, &B_cloud_up, &B_cloud_down, &memory_bandwidth, &py_deployed_server, &py_input_data_size, &py_B_dd, &py_P_dd, &py_partition_arrival_map)) {
+    PyObject *py_deployed_server, *py_input_data_size, *py_B_dd, *py_P_d, *py_partition_arrival_map;
+    if (!PyArg_ParseTuple(args, "iiiidddddOOOOO", &num_servers, &edge_id, &cloud_id, &server_id, &B_edge_up, &B_edge_down, &B_cloud_up, &B_cloud_down, &memory_bandwidth, &py_deployed_server, &py_input_data_size, &py_B_dd, &py_P_d, &py_partition_arrival_map)) {
         std::cout << "PyArg_ParseTuple Error" << std::endl;
         return NULL;
     }
     int *deployed_server = (int*)PyArray_DATA(py_deployed_server);
     double *B_dd = (double*)PyArray_DATA(py_B_dd);
-    double *P_dd = (double*)PyArray_DATA(py_P_dd);
+    double *P_d = (double*)PyArray_DATA(py_P_d);
     double *partition_arrival_map = (double*)PyArray_DATA(py_partition_arrival_map);
     std::map<std::pair<int, int>, double> input_data_size;
     if (!dictToMap(py_input_data_size, input_data_size)) {
@@ -346,7 +346,7 @@ PyObject* get_edge_energy_weight(PyObject* self, PyObject* args) {
     Py_DECREF(&py_deployed_server);
     Py_DECREF(&py_input_data_size);
     Py_DECREF(&py_B_dd);
-    Py_DECREF(&py_P_dd);
+    Py_DECREF(&py_P_d);
     Py_DECREF(&py_partition_arrival_map);
 
     // completion time calculation
@@ -355,7 +355,7 @@ PyObject* get_edge_energy_weight(PyObject* self, PyObject* args) {
     while (iter != input_data_size.end()) {
         if (deployed_server[iter->first.first] == server_id) {
             E_tr += get_transmission_time(iter->second, deployed_server[iter->first.first], deployed_server[iter->first.second], B_dd, B_edge_up, B_edge_down, B_cloud_up, B_cloud_down, memory_bandwidth, num_servers, edge_id, cloud_id)
-                    * P_dd[deployed_server[iter->first.first] * num_servers + deployed_server[iter->first.second]]
+                    * P_d[deployed_server[iter->first.first]]
                     * partition_arrival_map[iter->first.first];
         }
         ++iter;
