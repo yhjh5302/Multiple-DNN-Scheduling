@@ -1,6 +1,6 @@
 import numpy as np
 from dag_data_generator import DAGDataSet
-from genetic import Genetic, PSOGA, Greedy, HEFT
+from algorithms.Greedy import Greedy, HEFT
 from operator import itemgetter
 import time
 import sys

@@ -131,15 +131,16 @@ class SystemManager():
                 idx = np.where(self.deployed_server==s_id)
                 memory_consumption = sum(self.partition_memory_map[idx])
                 
-                if s_id in self.local or s_id in self.request:
-                    node_weight = self.computation_time_table[idx, s_id].flatten() * self.partition_arrival_map[idx]
-                    edge_weight = dag_completion_time.get_edge_energy_weight(self.num_servers, self.num_servers-2, self.num_servers-1, s_id, self.net_manager.B_edge_up, self.net_manager.B_edge_down, self.net_manager.B_cloud_up, self.net_manager.B_cloud_down, self.net_manager.memory_bandwidth, self.deployed_server, self.service_set.input_data_size, self.net_manager.B_dd.flatten(), self.net_manager.P_d, self.partition_arrival_map)
+                # if s_id in self.local or s_id in self.request: # 임시
+                #     node_weight = self.computation_time_table[idx, s_id].flatten() * self.partition_arrival_map[idx]
+                #     edge_weight = dag_completion_time.get_edge_energy_weight(self.num_servers, self.num_servers-2, self.num_servers-1, s_id, self.net_manager.B_edge_up, self.net_manager.B_edge_down, self.net_manager.B_cloud_up, self.net_manager.B_cloud_down, self.net_manager.memory_bandwidth, self.deployed_server, self.service_set.input_data_size, self.net_manager.B_dd.flatten(), self.net_manager.P_d, self.partition_arrival_map)
 
-                    E_cp = sum(node_weight) * (server.max_energy_consumption - server.min_energy_consumption) * server.tau
-                    E_tr = edge_weight * server.tau
-                    energy_consumption = E_cp + E_tr
-                else:
-                    energy_consumption = 0.
+                #     E_cp = sum(node_weight) * (server.max_energy_consumption - server.min_energy_consumption) * server.tau
+                #     E_tr = edge_weight * server.tau
+                #     energy_consumption = E_cp + E_tr
+                # else:
+                #     energy_consumption = 0.
+                energy_consumption = 0.
                 return (memory_consumption <= server.memory) and (energy_consumption <= server.cur_energy)
             else:
                 return True
@@ -152,15 +153,16 @@ class SystemManager():
                     idx = np.where(self.deployed_server==s_id)
                     memory_consumption = sum(self.partition_memory_map[idx])
                     
-                    if s_id in self.local or s_id in self.request:
-                        node_weight = self.computation_time_table[idx, s_id].flatten() * self.partition_arrival_map[idx]
-                        edge_weight = dag_completion_time.get_edge_energy_weight(self.num_servers, self.num_servers-2, self.num_servers-1, s_id, self.net_manager.B_edge_up, self.net_manager.B_edge_down, self.net_manager.B_cloud_up, self.net_manager.B_cloud_down, self.net_manager.memory_bandwidth, self.deployed_server, self.service_set.input_data_size, self.net_manager.B_dd.flatten(), self.net_manager.P_d, self.partition_arrival_map)
+                    # if s_id in self.local or s_id in self.request: # 임시
+                    #     node_weight = self.computation_time_table[idx, s_id].flatten() * self.partition_arrival_map[idx]
+                    #     edge_weight = dag_completion_time.get_edge_energy_weight(self.num_servers, self.num_servers-2, self.num_servers-1, s_id, self.net_manager.B_edge_up, self.net_manager.B_edge_down, self.net_manager.B_cloud_up, self.net_manager.B_cloud_down, self.net_manager.memory_bandwidth, self.deployed_server, self.service_set.input_data_size, self.net_manager.B_dd.flatten(), self.net_manager.P_d, self.partition_arrival_map)
 
-                        E_cp = sum(node_weight) * (server.max_energy_consumption - server.min_energy_consumption) * server.tau
-                        E_tr = edge_weight * server.tau
-                        energy_consumption = E_cp + E_tr
-                    else:
-                        energy_consumption = 0.
+                    #     E_cp = sum(node_weight) * (server.max_energy_consumption - server.min_energy_consumption) * server.tau
+                    #     E_tr = edge_weight * server.tau
+                    #     energy_consumption = E_cp + E_tr
+                    # else:
+                    #     energy_consumption = 0.
+                    energy_consumption = 0.
                     constraint_chk.append((memory_consumption <= server.memory) and (energy_consumption <= server.cur_energy))
                 else:
                     constraint_chk.append(True)
@@ -294,7 +296,7 @@ class SystemManager():
         # print("T_n", T_n)
         # print("U_n", U_n)
 
-        utility_factor = -max(T_n)
+        utility_factor = -np.max(T_n)
 
         # energy_factor = []
         # num_devices = 0
@@ -585,7 +587,7 @@ class Server:
     def constraint_chk(self, *args):
         if len(self.deployed_partition) == 0:
             return True
-        elif sum(self.deployed_partition_memory.values()) <= self.memory and self.energy_consumption() <= self.cur_energy:
+        elif sum(self.deployed_partition_memory.values()) <= self.memory: # and self.energy_consumption() <= self.cur_energy: 임시
             return True
         else:
             # print("\tmemory", max(self.deployed_partition_memory.values(), default=0) <= self.memory)

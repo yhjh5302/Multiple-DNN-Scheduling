@@ -1,17 +1,26 @@
-for servers in 0 2 4 6 8 10
+for servers in 2 5
   do
-    echo "auto test server: ${servers}"
-    python3 main.py --server_low=$servers --server_high=$servers --service_low=6 --service_high=6 --bandwidth_ratio=1.0;
-done
-
-for services in 1 2 3 4 5 6 7 8 9
-  do
-    echo "auto test server: ${services}"
-    python3 main.py --server_low=6 --server_high=6 --service_low=$services --service_high=$services --bandwidth_ratio=1.0;
-done
-
-for bandwidth in 0.1 0.5 1.0 2.0 3.0
-  do
-    echo "auto test bandwidth ratio: ${bandwidth}"
-    python3 main.py --server_low=6 --server_high=6 --service_low=6 --service_high=6 --bandwidth_ratio=$bandwidth;
+  for services in 3 4 5 6 7 8 9
+    do
+      echo "auto test - server: ${servers} service: ${services}"
+      python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Layerwise" --offloading="Local" --iteration=1;
+      python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Layerwise" --offloading="Edge" --iteration=1;
+      python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Layerwise" --offloading="HEFT" --iteration=1;
+      # python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Layerwise" --offloading="CPOP" --iteration=1;
+      # python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Layerwise" --offloading="PEFT" --iteration=1;
+      python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Layerwise" --offloading="PSOGA" --iteration=10;
+      python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Layerwise" --offloading="Genetic" --iteration=10;
+      # python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Layerwise" --offloading="MemeticPSOGA" --iteration=10;
+      # python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Layerwise" --offloading="MemeticGenetic" --iteration=10;
+      # python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Piecewise" --offloading="Local" --iteration=1;
+      # python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Piecewise" --offloading="Edge" --iteration=1;
+      python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Piecewise" --offloading="HEFT" --iteration=1;
+      # python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Piecewise" --offloading="CPOP" --iteration=1;
+      # python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Piecewise" --offloading="PEFT" --iteration=1;
+      python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Piecewise" --offloading="Greedy" --iteration=1;
+      python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Piecewise" --offloading="PSOGA" --iteration=10;
+      python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Piecewise" --offloading="Genetic" --iteration=10;
+      python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Piecewise" --offloading="MemeticPSOGA" --iteration=10;
+      python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Piecewise" --offloading="MemeticGenetic" --iteration=10;
+  done
 done

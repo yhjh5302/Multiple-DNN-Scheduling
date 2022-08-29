@@ -10,15 +10,17 @@ from dag_server import *
 
 
 class DAGDataSet:
-    def __init__(self, num_timeslots=1, num_services=3, apply_partition=True, layer_coarsening=False, net_manager=None, svc_arrival=None):
+    def __init__(self, num_timeslots=1, num_services=3, apply_partition='horizontal', graph_coarsening=False, layer_coarsening=False, net_manager=None, svc_arrival=None):
         self.num_timeslots = num_timeslots
         self.num_services = num_services
         self.apply_partition = apply_partition
         self.svc_set, self.system_manager = self.data_gen(net_manager=net_manager, svc_arrival=svc_arrival, apply_partition=apply_partition, layer_coarsening=layer_coarsening)
         if apply_partition == 'horizontal':
             self.coarsened_graph = self.horizontal_partitioning()
+            self.graph = [np.unique(cg) for cg in self.coarsened_graph]
         else:
             self.coarsened_graph = [np.arange(len(svc.partitions)) for svc in self.svc_set.services]
+            self.graph = [np.unique(cg) for cg in self.coarsened_graph]
 
         # 미리 계산이 필요한 정보들
         self.piece_device_map = np.array([idx for idx, cg in enumerate(self.coarsened_graph) for _ in np.unique(cg)])
@@ -46,6 +48,22 @@ class DAGDataSet:
 
         self.system_manager.calc_average()
         self.system_manager.calculate_schedule()
+
+        if apply_partition == 'horizontal' and graph_coarsening == True:
+            from mgp import MultilevelGraphPartitioning
+            MGP = MultilevelGraphPartitioning(dataset=self, k=9)
+            self.coarsened_graph = MGP.run_algo()
+            self.graph = [np.unique(cg) for cg in self.coarsened_graph]
+            self.num_pieces = sum([len(np.unique(cg)) for cg in self.coarsened_graph])
+            start = end = unique_start = unique_end = 0
+            for cg in self.coarsened_graph:
+                for order, idx in enumerate(np.unique(cg)):
+                    cg[np.where(cg == idx)] = order
+                start = end
+                end += len(cg)
+                unique_start = unique_end
+                unique_end += len(np.unique(cg))
+                self.partition_piece_map[start:end] = cg + unique_start
 
     def create_arrival_rate(self, num_services, minimum, maximum):
         return minimum + (maximum - minimum) * np.random.random(num_services)
@@ -352,8 +370,8 @@ class DAGDataSet:
 
 
         # create arrival rate table
-        self.max_arrival = 10
-        self.min_arrival = 10
+        self.max_arrival = 1
+        self.min_arrival = 1
 
         if svc_arrival is None:
             svc_arrival = list()
