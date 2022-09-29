@@ -1,7 +1,7 @@
 from matplotlib.pyplot import fill
 from numpy import dtype
-from SAC.util import *
-from SAC.sac import SAC
+from algorithms.SAC.util import *
+from algorithms.SAC.sac import SAC
 from dag_server import *
 from dag_data_generator import *
 
