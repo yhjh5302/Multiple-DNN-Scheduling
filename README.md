@@ -7,7 +7,7 @@ This repository includes the source code used in the project
 
 What is Piece-wise DNN Model Partitioning?
 
-!['Submit New Job on the left -> Add New on the upper right'](%EC%A3%BC%EC%84%9D_2020-06-30_154357.png "aaa")  
+!['Submit New Job on the left -> Add New on the upper right'](DNN_model_structure.png "aaa")  
 
 We split every DNN layer into several pieces, and consider the neuron level 
 *  [analyzing-stream-modern-hardware](https://github.com/TU-Berlin-DIMA/analyzing-stream-modern-hardware) by TU-Berlin-DIMA
