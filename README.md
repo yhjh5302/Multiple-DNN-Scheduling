@@ -18,12 +18,13 @@ Most of the code is written in python, but the high-complexity functions such as
 
 ## Prerequisites
 #### General
-*  numpy
-*  matplotlib
+*  python>=3.6  
+*  numpy  
+*  matplotlib  
 
 #### Scheduling Algorithm
-*  Multicore CPU (at least 8 cores for evolutionary algorithms)
-*  GPU and Pytorch (for reinforcement learning algorithms)
+*  Multicore CPU (at least 8 cores for evolutionary algorithms)  
+*  GPU and Pytorch (for reinforcement learning algorithms)  
 
 #### Data Generator
 *  Pre-generated DNN model and IoT device data ([config.py](https://github.com/yhjh5302/Multiple-DNN-Scheduling/blob/master/config.py))
