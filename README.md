@@ -3,54 +3,34 @@
 This repository includes the source code used in the project
 ["Distributed Inference for Multiple DNN Models in IoT Environments"](https://dl.acm.org/doi/abs/10.1145/3492866.3561254).
 
+
 ## About the project
 
-What is Piece-wise DNN Model Partitioning?
+Please refer to the attached poster [진영환-MobiHoc2022.pdf](https://github.com/yhjh5302/Multiple-DNN-Scheduling/files/9901072/-MobiHoc2022.pdf)
 
-!['Submit New Job on the left -> Add New on the upper right'](DNN_model_structure.png "aaa")  
-
-We split every DNN layer into several pieces, and consider the neuron level 
-*  [analyzing-stream-modern-hardware](https://github.com/TU-Berlin-DIMA/analyzing-stream-modern-hardware) by TU-Berlin-DIMA
-*  [LinearGenerator](https://github.com/walmartlabs/LinearGenerator) and [LinearRoad](https://github.com/walmartlabs/linearroad) by Walmart Labs
-
-The algorithm used in this project was written with reference to the following papers.
+The scheduling algorithms used in this project was written with reference to the following papers.
 *  [PSO-GA and Genetic algorithm]( https://github.com/SPSO-GA/dataset) - Chen, X., Zhang, J., Lin, B., Chen, Z., Wolter, K., & Min, G. (2021). Energy-efficient offloading for DNN-based smart IoT systems in cloud-edge environments. *IEEE Transactions on Parallel and Distributed Systems*, 33(3), 683-697.
 *  [HEFT and CPOP](https://en.wikipedia.org/wiki/Heterogeneous_earliest_finish_time) - Topcuoglu, H., Hariri, S., & Wu, M. Y. (2002). Performance-effective and low-complexity task scheduling for heterogeneous computing. *IEEE transactions on parallel and distributed systems*, 13(3), 260-274.
 *  [PEFT](https://github.com/mackncheesiest/peft) - Arabnejad, H., & Barbosa, J. G. (2013). List scheduling algorithm for heterogeneous systems by an optimistic cost table. *IEEE Transactions on Parallel and Distributed Systems*, 25(3), 682-694.
 
-This project simulates an entire distributed inference process, from DNN model partitioning to evaluating .  
-Most of the code is written in python, but the high-complexity tasks such as calculating DAG completion times are written in C++ for optimization.
+Most of the code is written in python, but the high-complexity functions such as calculating DAG completion times are written in C++ for optimization.
 
 
 ## Prerequisites
 #### General
-*  Numpy
-*  Pytorch
-*  Pytorch
+*  numpy
+*  matplotlib
+
+#### Scheduling Algorithm
+*  Multicore CPU (at least 8 cores for evolutionary algorithms)
+*  GPU and Pytorch (for reinforcement learning algorithms)
 
 #### Data Generator
-*  Plenty of free disk space (the generated data is about 1GB per lane!)
-
-#### Data Server
-*  ZeroMQ library
-*  Cloud-Profiler library
-*  Multicore CPU (at least 4 cores, and a core per every 4 Flink threads added)
-*  Pre-generated data
-
-#### Linear Road Benchmark
-*  Apache Flink (WARNING: the Flink parallelism MUST be multiple of 4. Details are described below)
-*  ZeroMQ library
-*  Cloud-Profiler library
-*  Multicore CPU (it is recommended to use the #cores as Flink parallelism. At least 4 is therefore required)
-
-#### Validator
-*  AeroSpike DB [server](https://www.aerospike.com/download/server). Client is already included in this project directory.
-*  Pre-generated data
-*  Output from Linear Road Benchmark
+*  Pre-generated DNN model and IoT device data ([config.py](https://github.com/yhjh5302/Multiple-DNN-Scheduling/files/9901072/config.py))
 
 
 ## How to run
-#### 1. Configuring Necessary Libraries
+#### 1. Build C++ Functions
 Refer to [build-scripts](https://git.elc.cs.yonsei.ac.kr/bburg/build-scripts) to configure Cloud-Profiler and ZeroMQ libraries.  
 After building Cloud-Profiler, locate the following files from `build_rel/src/cp/` directory:  
 `cloud_profilerJNI.jar`, `libcloud_profiler.so`, `config_server/libnet_conf.so`  
