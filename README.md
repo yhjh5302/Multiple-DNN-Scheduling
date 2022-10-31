@@ -6,7 +6,7 @@ This repository includes the source code used in the project
 
 ## About the project
 
-Please refer to the attached poster [진영환-MobiHoc2022.pdf](https://github.com/yhjh5302/Multiple-DNN-Scheduling/files/9901072/-MobiHoc2022.pdf)
+Please refer to the attached poster [진영환-MobiHoc2022.pdf](https://github.com/yhjh5302/Multiple-DNN-Scheduling/blob/master/Poster-MobiHoc2022.pdf)
 
 The scheduling algorithms used in this project was written with reference to the following papers.
 *  [PSO-GA and Genetic algorithm]( https://github.com/SPSO-GA/dataset) - Chen, X., Zhang, J., Lin, B., Chen, Z., Wolter, K., & Min, G. (2021). Energy-efficient offloading for DNN-based smart IoT systems in cloud-edge environments. *IEEE Transactions on Parallel and Distributed Systems*, 33(3), 683-697.
@@ -26,7 +26,7 @@ Most of the code is written in python, but the high-complexity functions such as
 *  GPU and Pytorch (for reinforcement learning algorithms)
 
 #### Data Generator
-*  Pre-generated DNN model and IoT device data ([config.py](https://github.com/yhjh5302/Multiple-DNN-Scheduling/files/9901072/config.py))
+*  Pre-generated DNN model and IoT device data ([config.py](https://github.com/yhjh5302/Multiple-DNN-Scheduling/blob/master/config.py))
 
 
 ## How to run
