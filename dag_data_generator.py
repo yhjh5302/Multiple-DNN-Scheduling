@@ -51,7 +51,7 @@ class DAGDataSet:
 
         if apply_partition == 'horizontal' and graph_coarsening == True:
             from mgp import MultilevelGraphPartitioning
-            MGP = MultilevelGraphPartitioning(dataset=self, k=9)
+            MGP = MultilevelGraphPartitioning(dataset=self, k=21)
             self.coarsened_graph = MGP.run_algo()
             self.graph = [np.unique(cg) for cg in self.coarsened_graph]
             self.num_pieces = sum([len(np.unique(cg)) for cg in self.coarsened_graph])

@@ -142,11 +142,11 @@ if __name__=="__main__":
         dataset.system_manager.scheduling_policy = "rank_u"
     elif args.partitioning == "Piecewise" and args.offloading == "PSOGA":
         algorithm = PSOGA(dataset=dataset, num_particles=50, w_max=0.8, w_min=0.2, c1_s=0.9, c1_e=0.2, c2_s=0.4, c2_e=0.9)
-        algorithm_parameter = { "loop": 300, "verbose": 100, "local_search": False, "early_exit_loop": 50 }
+        algorithm_parameter = { "loop": 600, "verbose": 100, "local_search": False, "early_exit_loop": 50 }
         dataset.system_manager.scheduling_policy = "rank_u"
     elif args.partitioning == "Piecewise" and args.offloading == "Genetic":
         algorithm = Genetic(dataset=dataset, num_solutions=50, mutation_ratio=0.1, cross_over_ratio=0.9)
-        algorithm_parameter = { "loop": 300, "verbose": 100, "local_search": False, "early_exit_loop": 50 }
+        algorithm_parameter = { "loop": 600, "verbose": 100, "local_search": False, "early_exit_loop": 50 }
         dataset.system_manager.scheduling_policy = "rank_u"
     elif args.partitioning == "Layerwise" and args.offloading == "MemeticPSOGA":
         algorithm = ServerOrderPSOGA(dataset=dataset, num_particles=50, w_max=0.8, w_min=0.2, c1_s=0.9, c1_e=0.2, c2_s=0.4, c2_e=0.9)
@@ -158,11 +158,11 @@ if __name__=="__main__":
         dataset.system_manager.scheduling_policy = "rank_u"
     elif args.partitioning == "Layerwise" and args.offloading == "PSOGA":
         algorithm = ServerOrderPSOGA(dataset=dataset, num_particles=50, w_max=0.8, w_min=0.2, c1_s=0.9, c1_e=0.2, c2_s=0.4, c2_e=0.9)
-        algorithm_parameter = { "loop": 300, "verbose": 100, "local_search": False, "early_exit_loop": 50 }
+        algorithm_parameter = { "loop": 600, "verbose": 100, "local_search": False, "early_exit_loop": 50 }
         dataset.system_manager.scheduling_policy = "rank_u"
     elif args.partitioning == "Layerwise" and args.offloading == "Genetic":
         algorithm = ServerOrderGenetic(dataset=dataset, num_solutions=50, mutation_ratio=0.1, cross_over_ratio=0.9)
-        algorithm_parameter = { "loop": 300, "verbose": 100, "local_search": False, "early_exit_loop": 50 }
+        algorithm_parameter = { "loop": 600, "verbose": 100, "local_search": False, "early_exit_loop": 50 }
         dataset.system_manager.scheduling_policy = "rank_u"
     else:
         raise RuntimeError(args.offloading, "is not our algorithm")

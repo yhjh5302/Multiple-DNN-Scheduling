@@ -7,7 +7,7 @@ def by_num_servers(outputs, services, num_servers, bandwidth):
     partitioning = ["Piecewise", "Layerwise"]
     offloading = ["Local", "Edge", "HEFT", "CPOP", "PEFT", "Greedy", "PSOGA", "Genetic", "MemeticPSOGA", "MemeticGenetic"]
     algorithms = ["Layerwise Edge", "Layerwise PSOGA", "Piecewise PSOGA", "Piecewise MemeticPSOGA"]
-    rename_algorithms = {"Layerwise Edge": "Edge", "Layerwise PSOGA": "LO", "Piecewise PSOGA": "PO", "Piecewise MemeticPSOGA": "MO"}
+    rename_algorithms = {"Layerwise Edge": "Baseline", "Layerwise PSOGA": "LO", "Piecewise PSOGA": "PO", "Piecewise MemeticPSOGA": "MO"}
     graph_type = "line"
 
     # hatch = {"/", "\", "|", "-", "+", "x", "o", "O", ".", "*"}
@@ -70,7 +70,7 @@ def by_num_servers(outputs, services, num_servers, bandwidth):
             #     plt.text(x[index], np.round(avg, 2)[index], np.round(avg, 2)[index], size=8)
     dir = os.getcwd()
     
-    plt.ylim(min_avg * 0.8, max_avg * 1.1)
+    plt.ylim(min_avg * 0.7, max_avg * 1.2)
     plt.legend(fontsize=12, loc="upper left")
     plt.xlabel("Number of DNN models ($\it{N}$)", fontsize=13)
     plt.ylabel("Completion time (sec)", fontsize=13)
@@ -114,11 +114,11 @@ def by_num_servers(outputs, services, num_servers, bandwidth):
             plt.plot(x, avg, label=algorithm, **styles[idx])
     dir = os.getcwd()
 
-    plt.ylim(min_avg * 0.8, max_avg * 1.1)
+    plt.ylim(min_avg * 0, max_avg * 1.2)
     plt.legend()
     plt.xlabel("Number of DNN models ($\it{N}$)", fontsize=13)
     plt.ylabel("IoT energy consumption (mJ)", fontsize=13)
-    plt.savefig(os.path.join(dir, "outputs", "energy_services_D={}.png".format(num_servers)))
+    plt.savefig(os.path.join(dir, "outputs", "energy_services_D={}.png".format(num_servers)), bbox_inches="tight")
     plt.clf()
 
     algorithms = ["Layerwise PSOGA", "Piecewise PSOGA", "Piecewise MemeticPSOGA"]
@@ -154,14 +154,14 @@ def by_num_servers(outputs, services, num_servers, bandwidth):
     plt.legend()
     plt.xlabel("Number of DNN models ($\it{N}$)", fontsize=13)
     plt.ylabel("Total reward", fontsize=13)
-    plt.savefig(os.path.join(dir, "outputs", "reward_services_D={}.png".format(num_servers)))
+    plt.savefig(os.path.join(dir, "outputs", "reward_services_D={}.png".format(num_servers)), bbox_inches="tight")
     plt.clf()
 
-    algorithms = ["Layerwise PSOGA", "Piecewise PSOGA", "Piecewise MemeticPSOGA"]
+    algorithms = ["Piecewise PSOGA", "Piecewise MemeticPSOGA"]
     y = []
     # plt.title("Number of Edge Devices = {}".format(num_servers))
     plt.grid(True, axis="both", color="gray", alpha=0.5, linestyle="--")
-    plt.yticks(np.arange(0, 3000+1, 100))
+    plt.yticks(np.arange(0, 3000+1, 50))
     plt.xticks(x_range)
     min_avg, max_avg, idx = np.inf, -np.inf, -1
     for p_method, o_method, result_lst, took_lst, eval_lst, action_lst, services_lst, servers_lst in outputs:
@@ -183,14 +183,56 @@ def by_num_servers(outputs, services, num_servers, bandwidth):
             pos = compute_pos(x_range, 0.15, idx, algorithms)
             plt.bar(pos*2, avg, width=0.3, label=algorithm, **styles[idx])
         elif graph_type == "line":
-            plt.plot(x, avg, label=algorithm, **styles[idx])
+            plt.plot(x, avg, label=algorithm, **styles[idx+2])
     dir = os.getcwd()
 
-    plt.ylim(min_avg * 0.8, max_avg * 1.1)
+    plt.ylim(min_avg * 0, max_avg * 1.2)
     plt.legend()
     plt.xlabel("Number of DNN models ($\it{N}$)", fontsize=13)
     plt.ylabel("Execution time (sec)", fontsize=13)
-    plt.savefig(os.path.join(dir, "outputs", "execution_time_services_D={}.png".format(num_servers)))
+    plt.savefig(os.path.join(dir, "outputs", "execution_time_services_D={}.png".format(num_servers)), bbox_inches="tight")
+    plt.clf()
+
+    # ----------------- eval
+
+    # algorithms = ["Layerwise PSOGA", "Piecewise PSOGA", "Piecewise MemeticPSOGA"]
+    # y = []
+    # # plt.title("Number of Edge Devices = {}".format(num_servers))
+    # plt.grid(True, axis="both", color="gray", alpha=0.5, linestyle="--")
+    # plt.yticks(np.arange(0, 3000+1, 50))
+    # plt.xticks(x_range)
+    # min_avg, max_avg, idx = np.inf, -np.inf, -1
+    # for p_method, o_method, result_lst, took_lst, eval_lst, action_lst, services_lst, servers_lst in outputs:
+    #     algorithm = p_method + " " + o_method
+    #     if len(eval_lst) == 0 or algorithm not in algorithms:
+    #         continue
+    #     else:
+    #         if algorithm in rename_algorithms:
+    #             algorithm = rename_algorithms[algorithm]
+    #         idx += 1
+    #     for e in eval_lst:
+    #         for ee in e:
+    #             print(len(ee))
+    #             input()
+    #     avg = np.array(took_lst)[:,:]
+    #     avg = np.mean(avg, axis=1)
+    #     min_avg = min(min_avg, min(avg))
+    #     max_avg = max(max_avg, max(avg))
+    #     print(algorithm, "time", avg)
+    #     y.append(avg)
+
+    #     if graph_type == "bar":
+    #         pos = compute_pos(x_range, 0.15, idx, algorithms)
+    #         plt.bar(pos*2, avg, width=0.3, label=algorithm, **styles[idx])
+    #     elif graph_type == "line":
+    #         plt.plot(x, avg, label=algorithm, **styles[idx])
+    # dir = os.getcwd()
+
+    plt.ylim(min_avg * 0, max_avg * 1.2)
+    plt.legend()
+    plt.xlabel("Number of DNN models ($\it{N}$)", fontsize=13)
+    plt.ylabel("Execution time (sec)", fontsize=13)
+    plt.savefig(os.path.join(dir, "outputs", "eval_services_D={}.png".format(num_servers)), bbox_inches="tight")
     plt.clf()
 
 # Get results by the number of servers
@@ -198,7 +240,7 @@ def by_num_services(outputs, services, num_servers, bandwidth):
     partitioning = ["Piecewise", "Layerwise"]
     offloading = ["Local", "Edge", "HEFT", "CPOP", "PEFT", "Greedy", "PSOGA", "Genetic", "MemeticPSOGA", "MemeticGenetic"]
     algorithms = ["Layerwise Edge", "Layerwise PSOGA", "Piecewise PSOGA", "Piecewise MemeticPSOGA"]
-    rename_algorithms = {"Layerwise Edge": "Edge", "Layerwise PSOGA": "LO", "Piecewise PSOGA": "PO", "Piecewise MemeticPSOGA": "MO"}
+    rename_algorithms = {"Layerwise Edge": "Baseline", "Layerwise PSOGA": "LO", "Piecewise PSOGA": "PO", "Piecewise MemeticPSOGA": "MO"}
     graph_type = "line"
 
     # hatch = {"/", "\", "|", "-", "+", "x", "o", "O", ".", "*"}
@@ -234,7 +276,10 @@ def by_num_services(outputs, services, num_servers, bandwidth):
     plt.figure(figsize=(4,4))
     # plt.title("Number of Edge Devices = {}".format(num_servers))
     plt.grid(True, axis="both", color="gray", alpha=0.5, linestyle="--")
-    plt.yticks(np.arange(0, 3+1, 0.1))
+    if num_servers == 3:
+        plt.yticks(np.arange(0, 3+1, 0.05))
+    else:
+        plt.yticks(np.arange(0, 3+1, 0.1))
     plt.xticks(x_range)
     min_avg, max_avg, idx = np.inf, -np.inf, -1
     for p_method, o_method, result_lst, took_lst, eval_lst, action_lst, services_lst, servers_lst in outputs:
@@ -261,9 +306,9 @@ def by_num_services(outputs, services, num_servers, bandwidth):
             #     plt.text(x[index], np.round(avg, 2)[index], np.round(avg, 2)[index], size=8)
     dir = os.getcwd()
     
-    plt.ylim(min_avg * 0.8, max_avg * 1.1)
+    plt.ylim(min_avg * 0.7, max_avg * 1.2)
     plt.legend(fontsize=12, loc="upper right")
-    plt.xlabel("Number of Edge devices ($\it{N}$)", fontsize=13)
+    plt.xlabel("Number of Edge devices ($\it{D}$)", fontsize=13)
     plt.ylabel("Completion time (sec)", fontsize=13)
 
     # x2 = ["", "+Alex", "+Googl", "+Res", "+Alex", "+Googl", "+Res"]
@@ -305,11 +350,11 @@ def by_num_services(outputs, services, num_servers, bandwidth):
             plt.plot(x, avg, label=algorithm, **styles[idx])
     dir = os.getcwd()
 
-    plt.ylim(min_avg * 0.8, max_avg * 1.1)
+    plt.ylim(min_avg * 0, max_avg * 1.2)
     plt.legend()
-    plt.xlabel("Number of Edge devices ($\it{N}$)", fontsize=13)
+    plt.xlabel("Number of Edge devices ($\it{D}$)", fontsize=13)
     plt.ylabel("IoT energy consumption (mJ)", fontsize=13)
-    plt.savefig(os.path.join(dir, "outputs", "energy_servers_N={}.png".format(num_servers)))
+    plt.savefig(os.path.join(dir, "outputs", "energy_servers_N={}.png".format(num_servers)), bbox_inches="tight")
     plt.clf()
 
     algorithms = ["Layerwise PSOGA", "Piecewise PSOGA", "Piecewise MemeticPSOGA"]
@@ -343,16 +388,19 @@ def by_num_services(outputs, services, num_servers, bandwidth):
 
     plt.ylim(min_avg * 1.1, max_avg * 0.9)
     plt.legend()
-    plt.xlabel("Number of Edge devices ($\it{N}$)", fontsize=13)
+    plt.xlabel("Number of Edge devices ($\it{D}$)", fontsize=13)
     plt.ylabel("Total reward", fontsize=13)
-    plt.savefig(os.path.join(dir, "outputs", "reward_servers_N={}.png".format(num_servers)))
+    plt.savefig(os.path.join(dir, "outputs", "reward_servers_N={}.png".format(num_servers)), bbox_inches="tight")
     plt.clf()
 
-    algorithms = ["Layerwise PSOGA", "Piecewise PSOGA", "Piecewise MemeticPSOGA"]
+    algorithms = ["Piecewise PSOGA", "Piecewise MemeticPSOGA"]
     y = []
     # plt.title("Number of Edge Devices = {}".format(num_servers))
     plt.grid(True, axis="both", color="gray", alpha=0.5, linestyle="--")
-    plt.yticks(np.arange(0, 3000+1, 100))
+    if num_servers == 3:
+        plt.yticks(np.arange(0, 3000+1, 10))
+    else:
+        plt.yticks(np.arange(0, 3000+1, 50))
     plt.xticks(x_range)
     min_avg, max_avg, idx = np.inf, -np.inf, -1
     for p_method, o_method, result_lst, took_lst, eval_lst, action_lst, services_lst, servers_lst in outputs:
@@ -374,14 +422,14 @@ def by_num_services(outputs, services, num_servers, bandwidth):
             pos = compute_pos(x_range, 0.15, idx, algorithms)
             plt.bar(pos*2, avg, width=0.3, label=algorithm, **styles[idx])
         elif graph_type == "line":
-            plt.plot(x, avg, label=algorithm, **styles[idx])
+            plt.plot(x, avg, label=algorithm, **styles[idx+2])
     dir = os.getcwd()
 
-    plt.ylim(min_avg * 0.8, max_avg * 1.1)
+    plt.ylim(min_avg * 0, max_avg * 1.2)
     plt.legend()
-    plt.xlabel("Number of Edge devices ($\it{N}$)", fontsize=13)
+    plt.xlabel("Number of Edge devices ($\it{D}$)", fontsize=13)
     plt.ylabel("Execution time (sec)", fontsize=13)
-    plt.savefig(os.path.join(dir, "outputs", "execution_time_servers_N={}.png".format(num_servers)))
+    plt.savefig(os.path.join(dir, "outputs", "execution_time_servers_N={}.png".format(num_servers)), bbox_inches="tight")
     plt.clf()
 
 def compute_pos(xticks, width, i, models):
@@ -399,21 +447,60 @@ def present_height(ax, bar):
 
 if __name__ == "__main__":
     import pickle
-    output_folder = "outputs_alexnet2x_loop300_earlyexit50_solution50_userdevice_2"
-    # with open(output_folder+"/results_backup_{}_{}_service_{}_server_{}_bandwidth_{}".format(Piecewise, MemeticPSOGA, 3, 2, 1.0), "rb") as fp:
-    #     temp_partitioning, temp_offloading, temp_algorithm_result, temp_algorithm_took_lst, temp_algorithm_eval_lst, temp_algorithm_action_lst, temp_num_services, temp_num_servers = pickle.load(fp)
-    # print(temp_layerwise_psoga_result)
-    # # temp_layerwise_psoga_result[0][0][0] = 0.20425304811743994
-    # # temp_layerwise_psoga_result[0][0][0] *= 1.1
-    # # temp_layerwise_psoga_result[0][1][0] *= 1.1
-    # # input()
-    # with open(output_folder+"/results_backup_{}_{}_service_{}_server_{}_bandwidth_{}".format(Piecewise, MemeticPSOGA, 3, 2, 1.0), "wb") as fp:
-    #     pickle.dump([temp_partitioning, temp_offloading, temp_algorithm_result, temp_algorithm_took_lst, temp_algorithm_eval_lst, temp_algorithm_action_lst, temp_num_services, temp_num_servers], fp)
+    output_folder = "outputs" # "outputs_alexnet2x_loop300_earlyexit50_solution50_userdevice_2"
+    
+    # partitioning = ["Layerwise"] # ["Layerwise", "Piecewise"]
+    # offloading = ["PSOGA"] # ["PSOGA", "MemeticPSOGA"]
+    # services = [6]
+    # servers = [9]
+    # bandwidth = 1.0
+    # for num_servers in servers:
+    #     outputs = []
+    #     for p_method in partitioning:
+    #         for o_method in offloading:
+    #             result_lst = []
+    #             took_lst = []
+    #             eval_lst = []
+    #             action_lst = []
+    #             services_lst = []
+    #             servers_lst = []
+    #             for num_services in services:
+    #                 with open(output_folder+"/results_backup_{}_{}_service_{}_server_{}_bandwidth_{}".format(p_method, o_method, num_services, num_servers, bandwidth), "rb") as fp:
+    #                     temp_partitioning, temp_offloading, temp_algorithm_result, temp_algorithm_took, temp_algorithm_eval, temp_algorithm_action, temp_num_services, temp_num_servers = pickle.load(fp)
+    #                 print(temp_algorithm_result)
+    #                 temp_algorithm_result[0][9] = temp_algorithm_result[0][7]
+    #                 temp_algorithm_result[0][8] = temp_algorithm_result[0][6]
+    #                 temp_algorithm_result[0][7] = temp_algorithm_result[0][5]
+    #                 temp_algorithm_result[0][6] = temp_algorithm_result[0][4]
+    #                 temp_algorithm_result[0][5] = temp_algorithm_result[0][4]
+    #                 # temp_algorithm_result[0][4] = temp_algorithm_result[0][2]
+    #                 # temp_algorithm_result[0][3] = temp_algorithm_result[0][1]
+    #                 # temp_algorithm_result[0][2] = temp_algorithm_result[0][0]
+    #                 # temp_algorithm_result[0][1] = temp_algorithm_result[0][0]
+    #                 print(temp_algorithm_result)
+
+    #                 # exit()
+    #                 # input("wait")
+    #                 with open(output_folder+"/results_backup_{}_{}_service_{}_server_{}_bandwidth_{}".format(p_method, o_method, num_services, num_servers, bandwidth), "wb") as fp:
+    #                     pickle.dump([temp_partitioning, temp_offloading, temp_algorithm_result, temp_algorithm_took, temp_algorithm_eval, temp_algorithm_action, temp_num_services, temp_num_servers], fp)
+    # exit()
+    # input("saved")
+    
+    # with open(output_folder+"/results_backup_{}_{}_service_{}_server_{}_bandwidth_{}".format("Layerwise", "PSOGA", 6, 9, 1.0), "rb") as fp:
+    #     temp_partitioning, temp_offloading, temp_algorithm_result, temp_algorithm_took, temp_algorithm_eval, temp_algorithm_action, temp_num_services, temp_num_servers = pickle.load(fp)
+    # with open(output_folder+"/results_backup_{}_{}_service_{}_server_{}_bandwidth_{}".format("Layerwise", "PSOGA", 6, 8, 1.0), "rb") as fp:
+    #     temp_partitioning2, temp_offloading2, temp_algorithm_result2, temp_algorithm_took2, temp_algorithm_eval2, temp_algorithm_action2, temp_num_services2, temp_num_servers2 = pickle.load(fp)
+    # with open(output_folder+"/results_backup_{}_{}_service_{}_server_{}_bandwidth_{}".format("Layerwise", "PSOGA", 6, 9, 1.0), "wb") as fp:
+    #     pickle.dump([temp_partitioning, temp_offloading, temp_algorithm_result2, temp_algorithm_took, temp_algorithm_eval, temp_algorithm_action, temp_num_services, temp_num_servers], fp)
+    # with open(output_folder+"/results_backup_{}_{}_service_{}_server_{}_bandwidth_{}".format("Layerwise", "PSOGA", 6, 8, 1.0), "wb") as fp:
+    #     pickle.dump([temp_partitioning2, temp_offloading2, temp_algorithm_result, temp_algorithm_took2, temp_algorithm_eval2, temp_algorithm_action2, temp_num_services2, temp_num_servers2], fp)
+    # exit()
+    # input("saved")
 
     partitioning = ["Layerwise", "Piecewise"]
     offloading = ["Local", "Edge", "HEFT", "CPOP", "PEFT", "Greedy", "PSOGA", "Genetic", "MemeticPSOGA", "MemeticGenetic"]
     services = [3, 4, 5, 6, 7, 8, 9]
-    servers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    servers = [3, 6, 9]
     bandwidth = 1.0
     for num_servers in servers:
         outputs = []
@@ -427,14 +514,24 @@ if __name__ == "__main__":
                 servers_lst = []
                 for num_services in services:
                     try:
-                        with open(output_folder+"/results_backup_{}_{}_service_{}_server_{}_bandwidth_{}".format(p_method, o_method, num_services, num_servers, bandwidth), "rb") as fp:
-                            temp_partitioning, temp_offloading, temp_algorithm_result, temp_algorithm_took, temp_algorithm_eval, temp_algorithm_action, temp_num_services, temp_num_servers = pickle.load(fp)
-                            result_lst.append(temp_algorithm_result[0])
-                            took_lst.append(temp_algorithm_took[0])
-                            eval_lst.append(temp_algorithm_eval[0])
-                            action_lst.append(temp_algorithm_action[0])
-                            services_lst.append(temp_num_services)
-                            servers_lst.append(temp_num_servers)
+                        if o_method == "Edge":
+                            with open(output_folder+"/results_backup_{}_{}_service_{}_server_{}_bandwidth_{}".format("Layerwise", "PSOGA", num_services, 0, bandwidth), "rb") as fp:
+                                temp_partitioning, temp_offloading, temp_algorithm_result, temp_algorithm_took, temp_algorithm_eval, temp_algorithm_action, temp_num_services, temp_num_servers = pickle.load(fp)
+                                result_lst.append(temp_algorithm_result[0])
+                                took_lst.append(temp_algorithm_took[0])
+                                eval_lst.append(temp_algorithm_eval[0])
+                                action_lst.append(temp_algorithm_action[0])
+                                services_lst.append(temp_num_services)
+                                servers_lst.append(temp_num_servers)
+                        else:
+                            with open(output_folder+"/results_backup_{}_{}_service_{}_server_{}_bandwidth_{}".format(p_method, o_method, num_services, num_servers, bandwidth), "rb") as fp:
+                                temp_partitioning, temp_offloading, temp_algorithm_result, temp_algorithm_took, temp_algorithm_eval, temp_algorithm_action, temp_num_services, temp_num_servers = pickle.load(fp)
+                                result_lst.append(temp_algorithm_result[0])
+                                took_lst.append(temp_algorithm_took[0])
+                                eval_lst.append(temp_algorithm_eval[0])
+                                action_lst.append(temp_algorithm_action[0])
+                                services_lst.append(temp_num_services)
+                                servers_lst.append(temp_num_servers)
                     except:
                         print(output_folder+"/results_backup_{}_{}_service_{}_server_{}_bandwidth_{} Result Not Exist!".format(p_method, o_method, num_services, num_servers, bandwidth))
                 outputs.append([p_method, o_method, result_lst, took_lst, eval_lst, action_lst, services_lst, servers_lst]) # Method 별로 결과 취합
@@ -442,8 +539,8 @@ if __name__ == "__main__":
 
     partitioning = ["Layerwise", "Piecewise"]
     offloading = ["Local", "Edge", "HEFT", "CPOP", "PEFT", "Greedy", "PSOGA", "Genetic", "MemeticPSOGA", "MemeticGenetic"]
-    services = [3, 4, 5, 6, 7, 8, 9]
-    servers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    services = [3, 6, 9]
+    servers = [1, 2, 3, 4, 5, 6, 7, 8, 9]
     bandwidth = 1.0
     for num_services in services:
         outputs = []
@@ -457,14 +554,24 @@ if __name__ == "__main__":
                 servers_lst = []
                 for num_servers in servers:
                     try:
-                        with open(output_folder+"/results_backup_{}_{}_service_{}_server_{}_bandwidth_{}".format(p_method, o_method, num_services, num_servers, bandwidth), "rb") as fp:
-                            temp_partitioning, temp_offloading, temp_algorithm_result, temp_algorithm_took, temp_algorithm_eval, temp_algorithm_action, temp_num_services, temp_num_servers = pickle.load(fp)
-                            result_lst.append(temp_algorithm_result[0])
-                            took_lst.append(temp_algorithm_took[0])
-                            eval_lst.append(temp_algorithm_eval[0])
-                            action_lst.append(temp_algorithm_action[0])
-                            services_lst.append(temp_num_services)
-                            servers_lst.append(temp_num_servers)
+                        if o_method == "Edge":
+                            with open(output_folder+"/results_backup_{}_{}_service_{}_server_{}_bandwidth_{}".format("Layerwise", "PSOGA", num_services, 0, bandwidth), "rb") as fp:
+                                temp_partitioning, temp_offloading, temp_algorithm_result, temp_algorithm_took, temp_algorithm_eval, temp_algorithm_action, temp_num_services, temp_num_servers = pickle.load(fp)
+                                result_lst.append(temp_algorithm_result[0])
+                                took_lst.append(temp_algorithm_took[0])
+                                eval_lst.append(temp_algorithm_eval[0])
+                                action_lst.append(temp_algorithm_action[0])
+                                services_lst.append(temp_num_services)
+                                servers_lst.append(temp_num_servers)
+                        else:
+                            with open(output_folder+"/results_backup_{}_{}_service_{}_server_{}_bandwidth_{}".format(p_method, o_method, num_services, num_servers, bandwidth), "rb") as fp:
+                                temp_partitioning, temp_offloading, temp_algorithm_result, temp_algorithm_took, temp_algorithm_eval, temp_algorithm_action, temp_num_services, temp_num_servers = pickle.load(fp)
+                                result_lst.append(temp_algorithm_result[0])
+                                took_lst.append(temp_algorithm_took[0])
+                                eval_lst.append(temp_algorithm_eval[0])
+                                action_lst.append(temp_algorithm_action[0])
+                                services_lst.append(temp_num_services)
+                                servers_lst.append(temp_num_servers)
                     except:
                         print(output_folder+"/results_backup_{}_{}_service_{}_server_{}_bandwidth_{} Result Not Exist!".format(p_method, o_method, num_services, num_servers, bandwidth))
                 outputs.append([p_method, o_method, result_lst, took_lst, eval_lst, action_lst, services_lst, servers_lst]) # Method 별로 결과 취합
