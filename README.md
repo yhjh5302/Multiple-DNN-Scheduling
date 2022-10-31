@@ -35,8 +35,7 @@ Most of the code is written in python, but the high-complexity functions such as
 >  python3 build_script.py build_ext --inplace
 
 #### 2. Run the test script
->  sh ./auto_test.sh
+>  sh ./auto_test.sh  
 
-It takes a few seconds for heuristic algorithms, and 1 to 5 minutes for evolutionary algorithms.
-
-The results are created in the ./outputs/ folder.
+It takes a few seconds for heuristic algorithms, and 1 to 5 minutes for evolutionary algorithms.  
+The results are created in the ./outputs/ folder.  
