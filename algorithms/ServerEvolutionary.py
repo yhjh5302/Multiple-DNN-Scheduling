@@ -59,51 +59,6 @@ class PSOGA:
         server = np.random.choice(self.server_lst, size=(self.num_particles, self.num_timeslots, self.num_pieces))
         server[0,:,:] = self.server_lst[-1]
         return server
-    
-    def local_search_multiprocessing(self, action):
-        np.random.seed(random.randint(0,2147483647))
-        self.system_manager.init_env()
-        for t in range(self.num_timeslots):
-            # self.deployed_server_reparation(action[t])
-
-            # local search x: deployed_server
-            self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(action[t]))
-            max_reward = self.system_manager.get_reward()
-            for j in np.random.choice(self.num_pieces, size=2, replace=False): # for jth layer
-                # local search x: deployed_server
-                if action[t,j] not in self.server_lst:
-                    server_lst = list(set(self.server_lst)-set([0]))
-                else:
-                    server_lst = list(set(self.server_lst)-set([action[t,j]]))
-                for s_id in server_lst:
-                    if s_id == 0:
-                        s_id = self.piece_device_map[j]
-                    temp = action[t,j]
-                    action[t,j] = s_id
-                    self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(action[t]))
-                    cur_reward = self.system_manager.get_reward()
-                    if cur_reward > max_reward and all(self.system_manager.constraint_chk()):
-                        max_reward = cur_reward
-                    else:
-                        action[t,j] = temp
-
-            # self.system_manager.after_timeslot(deployed_server=self.get_uncoarsened_x(action[t]), timeslot=t)
-        return action
-
-    # we have to find local optimum from current chromosomes.
-    def local_search(self, action, local_prob=0.5):
-        local_idx = np.random.rand(action.shape[0])
-        local_idx = local_idx < local_prob
-        local_idx = np.where(local_idx)[0]
-        if len(local_idx) == 0:
-            local_idx = np.array([np.random.randint(low=0, high=action.shape[0])])
-        np.random.shuffle(local_idx)
-
-        working_queue = [action[i] for i in local_idx]
-        with mp.Pool(processes=30) as pool:
-            temp = list(pool.map(self.local_search_multiprocessing, working_queue))
-        action[local_idx] = np.array(temp)
-        return action
 
     def run_algo(self, loop, verbose=True, local_search=False, early_exit_loop=5):
         start = time.time()
@@ -112,20 +67,13 @@ class PSOGA:
         eval_lst = []
 
         x_t = self.generate_random_solutions()
-        x_t = self.reparation(x_t)
-        if local_search:
-            x_t = self.local_search(x_t, local_prob=0.5)
-        p_t, g_t, p_t_eval_lst = self.selection(x_t)
+        x_t, p_t, g_t, p_t_eval_lst = self.selection(x_t, local_search=local_search, local_prob=0.5)
 
         for i in range(loop):
             v_t = self.mutation(x_t, g_t)
             c_t = self.crossover(v_t, p_t, crossover_rate=(self.c1_e-self.c1_s) * (i / loop) + self.c1_s)
             x_t = self.crossover(c_t, g_t, crossover_rate=(self.c2_e-self.c2_s) * (i / loop) + self.c2_s, is_global=True)
-            x_t = self.reparation(x_t)
-            
-            if local_search:
-                x_t = self.local_search(x_t, local_prob=0.5)
-            p_t, g_t, p_t_eval_lst = self.selection(x_t, p_t, g_t, p_t_eval_lst=p_t_eval_lst)
+            x_t, p_t, g_t, p_t_eval_lst = self.selection(x_t, p_t, g_t, p_t_eval_lst=p_t_eval_lst, local_search=local_search, local_prob=0.5)
             eval_lst.append(np.max(np.sum(p_t_eval_lst, axis=1)))
 
             if max_reward < np.max(np.sum(p_t_eval_lst, axis=1)):
@@ -186,14 +134,14 @@ class PSOGA:
         # print("r:", r, "\033[0m")
         return (uncoarsened_x, eval_lst, time.time() - start)
 
-    def selection(self, x_t, p_t=None, g_t=None, p_t_eval_lst=None):
+    def selection(self, x_t, p_t=None, g_t=None, p_t_eval_lst=None, local_search=False, local_prob=0.5):
         if p_t is None and g_t is None:
-            p_t_eval_lst = self.evaluation(x_t)
+            x_t, p_t_eval_lst = self.evaluation(x_t, local_search, local_prob)
             p_t_eval_sum = np.sum(p_t_eval_lst, axis=1)
             p_t = np.copy(x_t)
             g_t = np.copy(x_t[np.argmax(p_t_eval_sum),:,:])
         else:
-            new_eval_lst = self.evaluation(x_t)
+            x_t, new_eval_lst = self.evaluation(x_t, local_search, local_prob)
             new_eval_sum = np.sum(new_eval_lst, axis=1)
             p_t_eval_sum = np.sum(p_t_eval_lst, axis=1)
             indices = np.where(new_eval_sum > p_t_eval_sum)
@@ -201,7 +149,7 @@ class PSOGA:
             p_t_eval_lst[indices,:] = new_eval_lst[indices,:]
             p_t_eval_sum[indices] = new_eval_sum[indices]
             g_t = np.copy(p_t[np.argmax(p_t_eval_sum),:,:])
-        return p_t, g_t, p_t_eval_lst
+        return x_t, p_t, g_t, p_t_eval_lst
 
     @staticmethod
     def crossover_multiprocessing(inputs):
@@ -296,38 +244,50 @@ class PSOGA:
                     c_id = deployed_container_lst.pop() # random partition 하나를 골라서
                     x[c_id] = self.server_lst[-1] # edge server로 보냄
                     self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(x))
-
-    # convert invalid action to valid action, multiprocessing function.
-    def reparation_multiprocessing(self, position):
-        self.system_manager.init_env()
-        for t in range(self.num_timeslots):
-            self.deployed_server_reparation(position[t])
-            # self.system_manager.after_timeslot(deployed_server=self.get_uncoarsened_x(position[t]), timeslot=t)
-        return position
-
-    # convert invalid action to valid action.
-    def reparation(self, positions):
-        working_queue = [position for position in positions]
-        with mp.Pool(processes=30) as pool:
-            temp = list(pool.map(self.reparation_multiprocessing, working_queue))
-        positions = np.array(temp)
-        return positions
     
-    def evaluation_multiprocessing(self, position):
+    def local_search(self, action):
+        np.random.seed(random.randint(0,2147483647))
+        # local search x: deployed_server
+        self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(action))
+        max_reward = self.system_manager.get_reward()
+        for j in np.random.choice(self.num_pieces, size=2, replace=False): # for jth layer
+            # local search x: deployed_server
+            if action[j] not in self.server_lst:
+                server_lst = list(set(self.server_lst)-set([0]))
+            else:
+                server_lst = list(set(self.server_lst)-set([action[j]]))
+            for s_id in server_lst:
+                if s_id == 0:
+                    s_id = self.piece_device_map[j]
+                temp = action[j]
+                action[j] = s_id
+                self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(action))
+                cur_reward = self.system_manager.get_reward()
+                if cur_reward > max_reward and all(self.system_manager.constraint_chk()):
+                    max_reward = cur_reward
+                else:
+                    action[j] = temp
+    
+    def evaluation_multiprocessing(self, inputs):
+        position, local_search, local_prob = inputs
         self.system_manager.init_env()
         reward = []
         for t in range(self.num_timeslots):
+            self.deployed_server_reparation(position[t])
+            if local_search and random.random() < local_prob:
+                self.local_search(position[t])
             self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(position[t]))
             reward.append(self.system_manager.get_reward())
             # self.system_manager.after_timeslot(deployed_server=self.get_uncoarsened_x(position[t]), timeslot=t)
-        return reward
+        return position, reward
 
-    def evaluation(self, positions):
-        working_queue = [position for position in positions]
+    def evaluation(self, positions, local_search, local_prob):
+        working_queue = [(position, local_search, local_prob) for position in positions]
         with mp.Pool(processes=30) as pool:
-            evaluation_lst = list(pool.map(self.evaluation_multiprocessing, working_queue))
-        evaluation_lst = np.array(evaluation_lst)
-        return evaluation_lst
+            outputs = list(pool.map(self.evaluation_multiprocessing, working_queue))
+        positions = np.array([output[0] for output in outputs])
+        evaluation_lst = np.array([output[1] for output in outputs])
+        return positions, evaluation_lst
 
 
 class Genetic(PSOGA):
@@ -354,6 +314,49 @@ class Genetic(PSOGA):
         server = np.random.choice(self.server_lst, size=(self.num_solutions, self.num_timeslots, self.num_pieces))
         server[0,:,:] = self.server_lst[-1]
         return server
+    
+    def local_search_multiprocessing(self, action):
+        np.random.seed(random.randint(0,2147483647))
+        self.system_manager.init_env()
+        for t in range(self.num_timeslots):
+            # local search x: deployed_server
+            self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(action[t]))
+            max_reward = self.system_manager.get_reward()
+            for j in np.random.choice(self.num_pieces, size=2, replace=False): # for jth layer
+                # local search x: deployed_server
+                if action[t,j] not in self.server_lst:
+                    server_lst = list(set(self.server_lst)-set([0]))
+                else:
+                    server_lst = list(set(self.server_lst)-set([action[t,j]]))
+                for s_id in server_lst:
+                    if s_id == 0:
+                        s_id = self.piece_device_map[j]
+                    temp = action[t,j]
+                    action[t,j] = s_id
+                    self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(action[t]))
+                    cur_reward = self.system_manager.get_reward()
+                    if cur_reward > max_reward and all(self.system_manager.constraint_chk()):
+                        max_reward = cur_reward
+                    else:
+                        action[t,j] = temp
+
+            # self.system_manager.after_timeslot(deployed_server=self.get_uncoarsened_x(action[t]), timeslot=t)
+        return action
+
+    # we have to find local optimum from current chromosomes.
+    def local_search(self, action, local_prob=0.5):
+        local_idx = np.random.rand(action.shape[0])
+        local_idx = local_idx < local_prob
+        local_idx = np.where(local_idx)[0]
+        if len(local_idx) == 0:
+            local_idx = np.array([np.random.randint(low=0, high=action.shape[0])])
+        np.random.shuffle(local_idx)
+
+        working_queue = [action[i] for i in local_idx]
+        with mp.Pool(processes=30) as pool:
+            temp = list(pool.map(self.local_search_multiprocessing, working_queue))
+        action[local_idx] = np.array(temp)
+        return action
 
     def run_algo(self, loop, verbose=True, local_search=False, early_exit_loop=5):
         start = time.time()
@@ -362,8 +365,6 @@ class Genetic(PSOGA):
         eval_lst = []
 
         p_t = self.generate_random_solutions()
-        p_t = self.reparation(p_t)
-
         p_known = np.copy(p_t)
         if local_search:
             p_t = self.local_search(p_t, local_prob=0.5)
@@ -372,8 +373,6 @@ class Genetic(PSOGA):
             q_t = self.selection(p_t, p_known)
             q_t = self.mutation(q_t, self.mutation_ratio)
             q_t = self.crossover(q_t, self.cross_over_ratio)
-            q_t = self.reparation(q_t)
-
             if local_search:
                 q_t = self.local_search(q_t, local_prob=0.5)
             p_known = np.copy(q_t)
