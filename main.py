@@ -168,7 +168,7 @@ if __name__=="__main__":
         raise RuntimeError(args.offloading, "is not our algorithm")
 
     print(":::::::::: D ==", args.num_servers, "::::::::::\n")
-    algorithm.server_lst = [0] + list(dataset.system_manager.local.keys())[:args.num_servers] + list(dataset.system_manager.edge.keys())
+    algorithm.server_lst = list(dataset.system_manager.local.keys())[:args.num_servers] + list(dataset.system_manager.edge.keys())
 
     temp = [algorithm.run_algo(**algorithm_parameter) for _ in range(args.iteration)]
     algorithm_x_lst = [x for (x, e, t) in temp]

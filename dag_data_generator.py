@@ -49,6 +49,8 @@ class DAGDataSet:
         self.system_manager.calc_average()
         self.system_manager.calculate_schedule()
 
+        # Apply multilevel graph partitioning algorithm
+        # Return optimized DNN blocks
         if apply_partition == 'horizontal' and graph_coarsening == True:
             from mgp import MultilevelGraphPartitioning
             MGP = MultilevelGraphPartitioning(dataset=self, k=9)
@@ -65,9 +67,11 @@ class DAGDataSet:
                 unique_end += len(np.unique(cg))
                 self.partition_piece_map[start:end] = cg + unique_start
 
+    # Create random service arrival rate (almost deprecated)
     def create_arrival_rate(self, num_services, minimum, maximum):
         return minimum + (maximum - minimum) * np.random.random(num_services)
 
+    # Piecewise partitioning for Convolutional layer
     def cnn_partitioning(self, layer_info, num_partitions, min_unit, piece_idx_start):
         min_unit_partitions = []
         output_data_location = []
@@ -94,6 +98,7 @@ class DAGDataSet:
             min_unit_partitions.append(partition)
         return min_unit_partitions, output_data_location
 
+    # Piecewise partitioning for Fully-connected layer
     def fc_partitioning(self, layer_info, num_partitions, min_unit, piece_idx_start):
         min_unit_partitions = []
         for idx in range(num_partitions):
@@ -298,10 +303,12 @@ class DAGDataSet:
                         pass # to be continue
                 # create partitions
                 for partition in partitions:
+                    print(partition)
                     if len(partition['predecessors']) == 0 and len(partition['successors']) == 0:
                         print(partition['layer_name'], 'has no predecessor and successor node. so deleted from DAG')
                         continue
                     svc.partitions.append(Partition(svc_set=svc_set, service=svc, **partition))
+                input()
             else:
                 # partition coarsening
                 if coarsen_lst is not None:
