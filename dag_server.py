@@ -88,7 +88,7 @@ class SystemManager():
         self.rank_d = None
         self.optimistic_cost_table = None
 
-        self.scheduling_policy = 'rank_u' # 'rank_u', 'rank_d', 'rank_oct', 'earliest', 'noschedule'
+        self.scheduling_policy = 'rank_u' # 'rank_u', 'rank_d', 'rank_oct'
         self.rank_u_schedule = None
         self.rank_d_schedule = None
         self.rank_oct_schedule = None
@@ -268,24 +268,6 @@ class SystemManager():
             elif self.scheduling_policy == 'rank_oct':
                 execution_order = self.rank_oct_schedule
 
-            # execution_order calculation, earliest
-            elif self.scheduling_policy == 'earliest':
-                num_partitions = len(self.service_set.partitions)
-                self.rank_u = np.zeros(num_partitions)
-                for partition in self.service_set.partitions:
-                    if len(partition.successors) == 0:
-                        self.calc_rank_u_total(partition)
-                execution_order = np.array(np.array(sorted(zip(self.rank_u, np.arange(num_partitions)), reverse=True), dtype=np.int32)[:,1], dtype=np.int32)
-
-            # execution_order calculation, noschedule
-            elif self.scheduling_policy == 'noschedule':
-                num_partitions = len(self.service_set.partitions)
-                self.rank_d = np.zeros(num_partitions)
-                for partition in self.service_set.partitions:
-                    if len(partition.successors) == 0:
-                        self.calc_rank_d_total(partition)
-                execution_order = np.array(np.array(sorted(zip(self.rank_d, np.arange(num_partitions)), reverse=False), dtype=np.int32)[:,1], dtype=np.int32)
-
         self.execution_order = np.zeros_like(execution_order)
         for idx, k in enumerate(execution_order):
             self.execution_order[k] = idx
@@ -335,46 +317,6 @@ class SystemManager():
         self.average_bandwidth = np.mean(bandwidth[bandwidth < 1024*1024*1000])
         self.average_computing_power = np.mean(np.transpose([self.computing_frequency] * self.computing_intensity.shape[1]) / self.computing_intensity)
 
-    def calc_rank_u_average(self, partition):    # rank_u for heft
-        w_i = partition.workload_size / self.average_computing_power
-        communication_cost = [0,]
-        for succ in partition.successors:
-            c_ij = partition.get_output_data_size(succ) / self.average_bandwidth
-            if self.rank_u[succ.id] == 0:
-                self.calc_rank_u_average(succ)
-            communication_cost.append(c_ij + self.rank_u[succ.id])
-        self.rank_u[partition.id] = w_i + max(communication_cost)
-
-    def calc_rank_d_average(self, partition):    # rank_d for heft
-        pred_rank = [0,]
-        for pred in partition.predecessors:
-            w_j = pred.workload_size / self.average_computing_power
-            c_ij = partition.get_input_data_size(pred) / self.average_bandwidth
-            if self.rank_d[pred.id] == 0:
-                self.calc_rank_d_average(pred)
-            pred_rank.append(w_j + c_ij + self.rank_d[pred.id])
-        self.rank_d[partition.id] = max(pred_rank)
-
-    def calc_rank_u(self, partition):    # rank_u for heft
-        w_i = partition.get_computation_time()
-        communication_cost = [0,]
-        for succ in partition.successors:
-            c_ij = self.net_manager.communication(partition.get_output_data_size(succ), partition.deployed_server.id, succ.deployed_server.id)
-            if self.rank_u[succ.id] == 0:
-                self.calc_rank_u(succ)
-            communication_cost.append(c_ij + self.rank_u[succ.id])
-        self.rank_u[partition.id] = w_i + max(communication_cost)
-
-    def calc_rank_d(self, partition):    # rank_d for heft
-        pred_rank = [0,]
-        for pred in partition.predecessors:
-            w_j = pred.get_computation_time()
-            c_ij = self.net_manager.communication(partition.get_input_data_size(pred), pred.deployed_server.id, partition.deployed_server.id)
-            if self.rank_d[pred.id] == 0:
-                self.calc_rank_d(pred)
-            pred_rank.append(w_j + c_ij + self.rank_d[pred.id])
-        self.rank_d[partition.id] = max(pred_rank)
-
     def calc_rank_u_total_average(self, partition):    # rank_u for heft
         w_i = partition.workload_size / self.average_computing_power
         communication_cost = [0,]
@@ -411,26 +353,6 @@ class SystemManager():
                 p_w_lst.append(oct_jw + w_jw + c_ij)
             t_j_lst.append(min(p_w_lst))
         self.optimistic_cost_table[partition.total_id, s_idx] = max(t_j_lst)
-
-    def calc_rank_u_total(self, partition):    # rank_u for heft
-        w_i = partition.get_computation_time()
-        communication_cost = [0,]
-        for succ in partition.successors:
-            c_ij = self.net_manager.communication(partition.get_output_data_size(succ), partition.deployed_server.id, succ.deployed_server.id)
-            if self.rank_u[succ.total_id] == 0:
-                self.calc_rank_u_total(succ)
-            communication_cost.append(c_ij + self.rank_u[succ.total_id])
-        self.rank_u[partition.total_id] = w_i + max(communication_cost)
-
-    def calc_rank_d_total(self, partition):    # rank_d for heft
-        pred_rank = [0,]
-        for pred in partition.predecessors:
-            w_j = pred.get_computation_time()
-            c_ij = self.net_manager.communication(partition.get_input_data_size(pred), pred.deployed_server.id, partition.deployed_server.id)
-            if self.rank_d[pred.total_id] == 0:
-                self.calc_rank_d_total(pred)
-            pred_rank.append(w_j + c_ij + self.rank_d[pred.total_id])
-        self.rank_d[partition.total_id] = max(pred_rank)
 
 
 TYPE_CHAIN = 0

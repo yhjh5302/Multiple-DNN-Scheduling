@@ -139,38 +139,6 @@ class DAGDataSet:
                     layer_info['memory'] = layer_info['input_height'] * layer_info['input_width'] * layer_info['input_channel'] * layer_info['output_channel'] * 4 + layer_info['output_channel'] * 4
                     layer_info['memory'] += layer_info['input_height'] * layer_info['input_width'] * layer_info['input_channel'] * 4
 
-            # layer coarsening
-            if layer_coarsening:
-                coarsen_lst = []
-                if dnn['model_name'] == 'GoogLeNet':
-                    alpha = 1e-10
-                    beta = 1 / (1024*1024*100/8)
-                elif dnn['model_name'] == 'ResNet-50':
-                    alpha = 1e-10
-                    beta = 1 / (1024*1024*100/8)
-                elif dnn['model_name'] == 'AlexNet':
-                    alpha = 1e-10
-                    beta = 1 / (1024*1024*100/8)
-
-                for layer_info in dnn['layers']:
-                    if len(layer_info['predecessors']) == 1:
-                        predecessor = next(l for l in dnn['layers'] if l['layer_name'] == layer_info['predecessors'][0])
-                        if len(predecessor['successors']) == 1:
-                            if alpha * layer_info['workload_size'] < beta * np.max(layer_info['input_data_size']):
-                                if (predecessor['layer_name'], layer_info['layer_name']) not in coarsen_lst:
-                                    coarsen_lst.append((predecessor['layer_name'], layer_info['layer_name']))
-
-                    elif len(layer_info['successors']) == 1:
-                        successor = next(l for l in dnn['layers'] if l['layer_name'] == layer_info['successors'][0])
-                        if len(successor['predecessors']) == 1:
-                            if alpha * layer_info['workload_size'] < beta * np.max(layer_info['output_data_size']):
-                                if (layer_info['layer_name'], successor['layer_name']) not in coarsen_lst:
-                                    coarsen_lst.append((layer_info['layer_name'], successor['layer_name']))
-                # print(dnn['model_name'], len(coarsen_lst), coarsen_lst)
-                # input()
-            else:
-                coarsen_lst = None
-
             # just partitioning layers into minimum unit partitions
             if self.apply_partition:
                 partitioned_layers = []
@@ -295,36 +263,17 @@ class DAGDataSet:
                         pred_partition = next(p for p in partitions if p['layer_name'] == pred_partition_name)
                         pred_partition['successors'].append(partition['layer_name'])
                         pred_partition['output_data_size'].append(partition['input_data_size'][ith])
-                # partition coarsening
-                if coarsen_lst is not None:
-                    for (pred_name, succ_name) in coarsen_lst:
-                        pred_lst = [layer_info for layer_info in dnn['layers'] if layer_info['original_layer_name'] == pred_name]
-                        succ_lst = [layer_info for layer_info in dnn['layers'] if layer_info['original_layer_name'] == succ_name]
-                        pass # to be continue
                 # create partitions
                 for partition in partitions:
-                    print(partition)
                     if len(partition['predecessors']) == 0 and len(partition['successors']) == 0:
                         print(partition['layer_name'], 'has no predecessor and successor node. so deleted from DAG')
                         continue
                     svc.partitions.append(Partition(svc_set=svc_set, service=svc, **partition))
-                input()
+
+                # print(dnn['model_name']) # for piecewise partition debug
+                # for partition in partitions:
+                #     print(partition)
             else:
-                # partition coarsening
-                if coarsen_lst is not None:
-                    for (pred_name, succ_name) in coarsen_lst:
-                        pred = next(layer_info for layer_info in dnn['layers'] if layer_info['layer_name'] == pred_name)
-                        succ = next(layer_info for layer_info in dnn['layers'] if layer_info['layer_name'] == succ_name)
-                        succ['workload_size'] += pred['workload_size']
-                        succ['memory'] += pred['memory']
-                        succ['predecessors'] = pred['predecessors']
-                        succ['input_data_size'] = pred['input_data_size']
-                        for layer_info in dnn['layers']:
-                            if pred['layer_name'] in layer_info['predecessors']:
-                                layer_info['predecessors'][layer_info['predecessors'].index(pred['layer_name'])] = succ['layer_name']
-                            if pred['layer_name'] in layer_info['successors']:
-                                layer_info['successors'][layer_info['successors'].index(pred['layer_name'])] = succ['layer_name']
-                        dnn['layers'].remove(pred)
                 for layer_idx, layer_info in enumerate(dnn['layers']):
                     layer_info['layer_idx'] = layer_idx + layer_idx_start
                     svc.partitions.append(Partition(svc_set=svc_set, service=svc, **layer_info))

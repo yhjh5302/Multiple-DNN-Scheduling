@@ -38,6 +38,7 @@ class HEFT:
 
     def run_algo(self):
         timer = time.time()
+        # calculate rank
         if self.rank == 'rank_u':
             self.system_manager.rank_u = np.zeros(self.num_partitions)
             for partition in self.system_manager.service_set.partitions:
@@ -45,6 +46,7 @@ class HEFT:
                     self.system_manager.calc_rank_u_total_average(partition)
             x = np.full(shape=(self.num_timeslots, self.num_partitions), fill_value=self.system_manager.cloud_id, dtype=np.int32)
             y = np.array([np.array(sorted(zip(self.system_manager.rank_u, np.arange(self.num_partitions)), reverse=True), dtype=np.int32)[:,1] for _ in range(self.num_timeslots)])
+
         elif self.rank == 'rank_d':
             self.system_manager.rank_d = np.zeros(self.num_partitions)
             for partition in self.system_manager.service_set.partitions:
@@ -53,7 +55,7 @@ class HEFT:
             x = np.full(shape=(self.num_timeslots, self.num_partitions), fill_value=self.system_manager.cloud_id, dtype=np.int32)
             y = np.array([np.array(sorted(zip(self.system_manager.rank_d, np.arange(self.num_partitions)), reverse=False), dtype=np.int32)[:,1] for _ in range(self.num_timeslots)])
 
-        # print(y)
+        # scheduling
         self.system_manager.init_env()
         for t in range(self.num_timeslots):
             finish_time, ready_time = None, None
@@ -97,6 +99,7 @@ class CPOP:
 
     def run_algo(self):
         timer = time.time()
+        # calculate rank_u and rank_d
         self.system_manager.rank_u = np.zeros(self.num_partitions)
         for partition in self.system_manager.service_set.partitions:
             if len(partition.predecessors) == 0:
@@ -128,7 +131,7 @@ class CPOP:
         x = np.full(shape=(self.num_timeslots, self.num_partitions), fill_value=self.system_manager.cloud_id, dtype=np.int32)
         y = np.array([np.array(sorted(zip(self.system_manager.rank_u, np.arange(self.num_partitions)), reverse=True), dtype=np.int32)[:,1] for _ in range(self.num_timeslots)])
 
-        # print(y)
+        # scheduling
         self.system_manager.init_env()
         for t in range(self.num_timeslots):
             finish_time, ready_time = None, None

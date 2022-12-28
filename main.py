@@ -106,11 +106,11 @@ if __name__=="__main__":
     if args.offloading == "Local":
         algorithm = Local(dataset=dataset)
         algorithm_parameter = { }
-        dataset.system_manager.scheduling_policy = "noschedule"
+        dataset.system_manager.scheduling_policy = "rank_u"
     elif args.offloading == "Edge":
         algorithm = Edge(dataset=dataset)
         algorithm_parameter = { }
-        dataset.system_manager.scheduling_policy = "noschedule"
+        dataset.system_manager.scheduling_policy = "rank_u"
     elif args.offloading == "HEFT":
         algorithm = HEFT(dataset=dataset)
         algorithm_parameter = { }
