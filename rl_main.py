@@ -110,9 +110,9 @@ if __name__=="__main__":
 
         result_by_servers = []
 
-        server_low = 10
-        server_high = 10
-        server_step = 2
+        server_low = 3
+        server_high = 3
+        server_step = 1
         for num_servers in range(server_low, server_high+1, server_step):
             print(":::::::::: S ==", num_servers, "::::::::::\n")
 
@@ -120,7 +120,7 @@ if __name__=="__main__":
             greedy.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys())
             dataset.server_lst = list(dataset.system_manager.local.keys())[:num_servers] + list(dataset.system_manager.edge.keys())
 
-            dataset.system_manager.scheduling_policy = 'noschedule'
+            # dataset.system_manager.scheduling_policy = 'noschedule'
 
             start = time.time()
             local_x_lst = [np.array([[dataset.system_manager.net_manager.request_device[p.service.id] for p in dataset.svc_set.partitions] for t in range(dataset.num_timeslots)])]
@@ -129,24 +129,24 @@ if __name__=="__main__":
 
             start = time.time()
             edge_x_lst = [np.full(shape=(dataset.num_timeslots, dataset.num_partitions), fill_value=list(dataset.system_manager.edge.keys())[0], dtype=np.int32)]
-            edge_took = [time.time() - start]
+            edge_took = time.time() - start
             edge_result.append(result(dataset, edge_x_lst, took=edge_took, algorithm_name="Edge Only"))
 
             heft.rank = 'rank_u'
             dataset.system_manager.scheduling_policy = 'rank_u'
 
             start = time.time()
-            heft_x_lst = [heft.run_algo()]
-            heft_took = [time.time() - start]
-            heft_u_result.append(result(dataset, heft_x_lst, took=heft_took, algorithm_name="HEFT-U Algorithm (M={}, D={})".format(num_services, num_servers)))
+            heft_x_lst = heft.run_algo()
+            heft_took = time.time() - start
+            heft_u_result.append(result(dataset, heft_x_lst, took=heft_took, algorithm_name="HEFT Algorithm (M={}, D={})".format(num_services, num_servers)))
 
             greedy.rank = 'rank_u'
             dataset.system_manager.scheduling_policy = 'rank_u'
 
             start = time.time()
-            greedy_x_lst = [greedy.run_algo_piecewise()]
-            greedy_took = [time.time() - start]
-            greedy_u_result.append(result(dataset, greedy_x_lst, took=greedy_took, algorithm_name="Greedy-U Algorithm (M={}, D={})".format(num_services, num_servers)))
+            greedy_x_lst = greedy.run_algo_piecewise()
+            greedy_took = time.time() - start
+            greedy_u_result.append(result(dataset, greedy_x_lst, took=greedy_took, algorithm_name="Greedy Algorithm (M={}, D={})".format(num_services, num_servers)))
 
             dataset.system_manager.scheduling_policy = 'rank_u'
 

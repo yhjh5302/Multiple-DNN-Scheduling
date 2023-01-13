@@ -48,10 +48,11 @@ def SAC(num_states, num_actions, env, dataset):
             episode_next_state = []
             episode_done = []
             hidden_out = (torch.zeros([1, 1, hidden_dim], dtype=torch.float).cuda(), torch.zeros([1, 1, hidden_dim], dtype=torch.float).cuda())  # initialize hidden state for lstm, (hidden, cell), each is (layer, batch, dim)             
-            
+            print(eps)
             for step in range(env.max_step):
                 hidden_in = hidden_out
                 action, hidden_out = sac_trainer.policy_net.get_action(state, last_action, hidden_in, deterministic = DETERMINISTIC)
+                print(action.shape)
                 next_state, reward, done, _ = env.next_step(action)
 
                 if step == 0:
@@ -115,7 +116,7 @@ def plot(rewards):
 
 class SAC_Trainer():
     def __init__(self, replay_buffer, state_dim, action_dim, hidden_dim, action_range):
-        
+
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.replay_buffer = replay_buffer
         print("state_dim", state_dim, "action_dim", action_dim, "device", self.device)

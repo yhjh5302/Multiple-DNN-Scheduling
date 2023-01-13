@@ -84,7 +84,8 @@ class DAGDataSet:
             min_unit_start = min_unit_end
             min_unit_end += min_unit
             partition['output_height'] = min_unit_end - min_unit_start if idx < (num_partitions - 1) else layer_info['output_height'] - min_unit_start
-            partition['input_height'] = (partition['output_height'] - 1) * layer_info['stride'] + partition['kernel'] - max(layer_info['padding'] - layer_info['stride'] * min_unit * idx, (layer_info['padding'] - (layer_info['input_height'] + 1) % layer_info['stride']) - layer_info['stride'] * min_unit * (num_partitions - 1 - idx), 0)
+            print(partition['output_height'])
+            partition['input_height'] = (partition['output_height'] - 1) * layer_info['stride'] + partition['kernel'] #- max(layer_info['padding'] - layer_info['stride'] * min_unit * idx, (layer_info['padding'] - (layer_info['input_height'] + 1) % layer_info['stride']) - layer_info['stride'] * min_unit * (num_partitions - 1 - idx), 0)
             start = max(layer_info['stride'] * min_unit * idx - layer_info['padding'], 0)
             end = start + partition['input_height']
             partition['input_data_location'] = [i for i in range(start, end)]
@@ -189,6 +190,14 @@ class DAGDataSet:
                 for layer_info in partitioned_layers:
                     if layer_info['layer_type'] in ['cnn','maxpool']:
                         for partition in layer_info['min_unit_partitions']:
+                            # 여기서 보내야할 행렬 위치 찾아서 행렬로 넣어두면 뒤에서 이름 매핑해서 인자로 넣음.
+                            # partition['input_data_location']는 받아와야하는 행렬의 height를 의미
+                            # 즉 layer_output으로부터 [:,partition['input_data_location'][0]:partition['input_data_location'][-1],:,:]을 가져와야함.
+                            # 
+                            print("partition['input_data_location']", partition['input_data_location'], partition['layer_name'], partition['input_width'], partition['input_height'])
+                            print("partition['output_data_location']", layer_info['output_data_location'], partition['layer_name'], partition['output_width'], partition['output_height'])
+                            print(next(l for l in partitioned_layers if l['layer_name'] == partition['original_layer_name'])['min_unit_partitions'])
+                            input()
                             predecessors = []
                             input_data_size = []
                             for pred_layer_name in partition['predecessors']:
@@ -270,9 +279,10 @@ class DAGDataSet:
                         continue
                     svc.partitions.append(Partition(svc_set=svc_set, service=svc, **partition))
 
-                # print(dnn['model_name']) # for piecewise partition debug
-                # for partition in partitions:
-                #     print(partition)
+                print(dnn['model_name']) # for piecewise partition debug
+                for partition in partitions:
+                    print(partition)
+                input()
             else:
                 for layer_idx, layer_info in enumerate(dnn['layers']):
                     layer_info['layer_idx'] = layer_idx + layer_idx_start

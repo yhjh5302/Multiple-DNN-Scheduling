@@ -59,7 +59,7 @@ if __name__=="__main__":
     parser.add_argument("--num_servers", type=int, default=2, help="_")
     parser.add_argument("--bandwidth_ratio", type=float, default=1.0, help="_")
     parser.add_argument("--partitioning", type=str, choices=["Piecewise", "Layerwise"], default="Layerwise", help="_")
-    parser.add_argument("--offloading", type=str, choices=["Local", "Edge", "HEFT", "CPOP", "PEFT", "Greedy", "PSOGA", "Genetic", "MemeticPSOGA", "MemeticGenetic"], default="Local", help="_")
+    parser.add_argument("--offloading", type=str, choices=["Local", "Edge", "HEFT", "CPOP", "PEFT", "Greedy", "PSOGA", "Genetic", "MemeticPSOGA", "MemeticGenetic", "SAC"], default="Local", help="_")
     parser.add_argument("--iteration", type=int, default=1, help="_")
     args = parser.parse_args()
 
@@ -162,6 +162,11 @@ if __name__=="__main__":
         dataset.system_manager.scheduling_policy = "rank_u"
     elif args.partitioning == "Layerwise" and args.offloading == "Genetic":
         algorithm = ServerOrderGenetic(dataset=dataset, num_solutions=50, mutation_ratio=0.1, cross_over_ratio=0.9)
+        algorithm_parameter = { "loop": 600, "verbose": 100, "local_search": False, "early_exit_loop": 50 }
+        dataset.system_manager.scheduling_policy = "rank_u"
+    elif args.partitioning == "Layerwise" and args.offloading == "SAC":
+        from dag_env import DAGEnv
+        algorithm = DAGEnv(dataset, max_episode=1000)
         algorithm_parameter = { "loop": 600, "verbose": 100, "local_search": False, "early_exit_loop": 50 }
         dataset.system_manager.scheduling_policy = "rank_u"
     else:
