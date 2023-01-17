@@ -97,7 +97,7 @@ class DAGDataSet:
                 partition['input_data_size'] = partition['input_height'] * partition['input_width'] * partition['input_channel']
             partition['workload_size'] *= partition['output_height'] / layer_info['output_height']
             partition['memory'] *= partition['output_height'] / layer_info['output_height']
-            output_data_location += [partition['layer_name'] for _ in range(partition['output_height'])]
+            output_data_location += [(partition['layer_name'], i) for i, _ in enumerate(range(partition['output_height']))]
             min_unit_partitions.append(partition)
         return min_unit_partitions, output_data_location
 
@@ -170,13 +170,13 @@ class DAGDataSet:
                         partitioned_layers.append({'layer_name':layer_info['layer_name'], 'layer_type':layer_info['layer_type'], 'min_unit_partitions':min_unit_partitions, 'output_data_location':output_data_location})
                     elif layer_info['layer_type'] in ['fc','avgpool']:
                         if dnn['model_name'] == 'GoogLeNet':
-                            num_partitions = 3 # partiton size 6
+                            num_partitions = 1 # partiton size 6
                             min_unit = max(math.floor(layer_info['input_height'] * layer_info['input_width'] * layer_info['input_channel'] / num_partitions), 1)
                         elif dnn['model_name'] == 'ResNet-50':
-                            num_partitions = 3 # partiton size 7
+                            num_partitions = 1 # partiton size 7
                             min_unit = max(math.floor(layer_info['input_height'] * layer_info['input_width'] * layer_info['input_channel'] / num_partitions), 1)
                         elif dnn['model_name'] == 'AlexNet':
-                            num_partitions = 3 # partiton size 6
+                            num_partitions = 1 # partiton size 6
                             min_unit = max(math.floor(layer_info['input_height'] * layer_info['input_width'] * layer_info['input_channel'] / num_partitions), 1)
                         else:
                             min_unit = 256
@@ -192,21 +192,24 @@ class DAGDataSet:
                 for layer_info in partitioned_layers:
                     if layer_info['layer_type'] in ['cnn','maxpool']:
                         for partition in layer_info['min_unit_partitions']:
-                            # 여기서 보내야할 행렬 위치 찾아서 행렬로 넣어두면 뒤에서 이름 매핑해서 인자로 넣음.
-                            # partition['input_data_location']는 받아와야하는 행렬의 height를 의미
-                            # 즉 layer_output으로부터 [:,partition['input_data_location'][0]:partition['input_data_location'][-1],:,:]을 가져와야함.
-                            # 
-                            print("partition['input_data_location']", partition['input_data_location'], partition['layer_name'], partition['input_width'], partition['input_height'])
-                            print("partition['output_data_location']", layer_info['output_data_location'], partition['layer_name'], partition['output_width'], partition['output_height'])
-                            # print(next(l for l in partitioned_layers if l['layer_name'] == partition['original_layer_name'])['min_unit_partitions'])
-                            input()
+                            for pred_layer_name in partition['predecessors']:
+                                pred_layer = next(l for l in partitioned_layers if l['layer_name'] == pred_layer_name)
+                                partition['input_slicing'] = dict()
+                                for i in partition['input_data_location']:
+                                    if pred_layer['output_data_location'][i][0] in partition['input_slicing']:
+                                        if partition['input_slicing'][pred_layer['output_data_location'][i][0]][0] > pred_layer['output_data_location'][i][1]:
+                                            partition['input_slicing'][pred_layer['output_data_location'][i][0]][0] = pred_layer['output_data_location'][i][1]
+                                        elif partition['input_slicing'][pred_layer['output_data_location'][i][0]][1] < pred_layer['output_data_location'][i][1]:
+                                            partition['input_slicing'][pred_layer['output_data_location'][i][0]][1] = pred_layer['output_data_location'][i][1]
+                                    else:
+                                        partition['input_slicing'][pred_layer['output_data_location'][i][0]] = [pred_layer['output_data_location'][i][1], pred_layer['output_data_location'][i][1]]
                             predecessors = []
                             input_data_size = []
                             for pred_layer_name in partition['predecessors']:
                                 pred_layer = next(l for l in partitioned_layers if l['layer_name'] == pred_layer_name)
                                 for input_location in partition['input_data_location']:
                                     # find predecessor partition and calculate input size from the predecessor
-                                    pred_partition = next(l for l in pred_layer['min_unit_partitions'] if l['layer_name'] == pred_layer['output_data_location'][input_location])
+                                    pred_partition = next(l for l in pred_layer['min_unit_partitions'] if l['layer_name'] == pred_layer['output_data_location'][input_location][0])
                                     if pred_partition['layer_name'] not in predecessors:
                                         predecessors.append(pred_partition['layer_name'])
                                         input_data_size.append(partition['input_width'] * partition['input_channel'] * 4)
