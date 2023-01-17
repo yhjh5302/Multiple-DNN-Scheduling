@@ -84,11 +84,13 @@ class DAGDataSet:
             min_unit_start = min_unit_end
             min_unit_end += min_unit
             partition['output_height'] = min_unit_end - min_unit_start if idx < (num_partitions - 1) else layer_info['output_height'] - min_unit_start
-            print(partition['output_height'])
-            partition['input_height'] = (partition['output_height'] - 1) * layer_info['stride'] + partition['kernel'] #- max(layer_info['padding'] - layer_info['stride'] * min_unit * idx, (layer_info['padding'] - (layer_info['input_height'] + 1) % layer_info['stride']) - layer_info['stride'] * min_unit * (num_partitions - 1 - idx), 0)
-            start = max(layer_info['stride'] * min_unit * idx - layer_info['padding'], 0)
-            end = start + partition['input_height']
-            partition['input_data_location'] = [i for i in range(start, end)]
+            partition['input_height'] = (partition['output_height'] - 1) * layer_info['stride'] + partition['kernel'] - 1
+            start = layer_info['stride'] * min_unit * idx - layer_info['padding']
+            end = min(start + partition['input_height'], layer_info['input_height'] - 1)
+            start = max(start, 0)
+            partition['input_height'] = end - start
+            # print(layer_info['layer_name'], "start:", start, "end:", end, '[kernel/2]:', math.floor(layer_info['kernel']/2), 'padding:', layer_info['padding'], "input:", partition['input_height'], "output:", partition['output_height'])
+            partition['input_data_location'] = [i for i in range(start, end + 1)]
             if len(partition['predecessors']) > 0:
                 partition['input_data_size'] = partition['input_height'] * partition['input_width'] * partition['input_channel'] * 4
             else:
@@ -196,7 +198,7 @@ class DAGDataSet:
                             # 
                             print("partition['input_data_location']", partition['input_data_location'], partition['layer_name'], partition['input_width'], partition['input_height'])
                             print("partition['output_data_location']", layer_info['output_data_location'], partition['layer_name'], partition['output_width'], partition['output_height'])
-                            print(next(l for l in partitioned_layers if l['layer_name'] == partition['original_layer_name'])['min_unit_partitions'])
+                            # print(next(l for l in partitioned_layers if l['layer_name'] == partition['original_layer_name'])['min_unit_partitions'])
                             input()
                             predecessors = []
                             input_data_size = []
