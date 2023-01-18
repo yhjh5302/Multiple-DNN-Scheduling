@@ -21,6 +21,12 @@ class DAGDataSet:
         else:
             self.coarsened_graph = [np.arange(len(svc.partitions)) for svc in self.svc_set.services]
             self.graph = [np.unique(cg) for cg in self.coarsened_graph]
+        # for partition in self.system_manager.service_set.partitions:
+        #     if hasattr(partition, 'input_slicing'):
+        #         print(partition.layer_name, partition.input_slicing)
+        #         for slicing in partition.input_slicing.values():
+        #             print("[{}:{},:,:]".format(slicing[0], slicing[1]))
+        #         input()
 
         # 미리 계산이 필요한 정보들
         self.piece_device_map = np.array([idx for idx, cg in enumerate(self.coarsened_graph) for _ in np.unique(cg)])
@@ -284,10 +290,10 @@ class DAGDataSet:
                         continue
                     svc.partitions.append(Partition(svc_set=svc_set, service=svc, **partition))
 
-                print(dnn['model_name']) # for piecewise partition debug
-                for partition in partitions:
-                    print(partition)
-                input()
+                # print(dnn['model_name']) # for piecewise partition debug
+                # for partition in partitions:
+                #     print(partition)
+                # input()
             else:
                 for layer_idx, layer_info in enumerate(dnn['layers']):
                     layer_info['layer_idx'] = layer_idx + layer_idx_start

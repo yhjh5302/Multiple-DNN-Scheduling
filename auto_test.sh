@@ -1,6 +1,6 @@
 for servers in 6
   do
-  for services in 3
+  for services in 1
     do
       echo "auto test - server: ${servers} service: ${services}"
       # python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Layerwise" --offloading="Local" --iteration=1;
