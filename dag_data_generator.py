@@ -21,12 +21,6 @@ class DAGDataSet:
         else:
             self.coarsened_graph = [np.arange(len(svc.partitions)) for svc in self.svc_set.services]
             self.graph = [np.unique(cg) for cg in self.coarsened_graph]
-        # for partition in self.system_manager.service_set.partitions:
-        #     if hasattr(partition, 'input_slicing'):
-        #         print(partition.layer_name, partition.input_slicing)
-        #         for slicing in partition.input_slicing.values():
-        #             print("[{}:{},:,:]".format(slicing[0], slicing[1]))
-        #         input()
 
         # 미리 계산이 필요한 정보들
         self.piece_device_map = np.array([idx for idx, cg in enumerate(self.coarsened_graph) for _ in np.unique(cg)])
@@ -110,18 +104,25 @@ class DAGDataSet:
     # Piecewise partitioning for Fully-connected layer
     def fc_partitioning(self, layer_info, num_partitions, min_unit, piece_idx_start):
         min_unit_partitions = []
+        output_data_location = []
+        min_unit_start = min_unit_end = 0
         for idx in range(num_partitions):
             partition = deepcopy(layer_info)
             partition['layer_name'] = layer_info['layer_name'] + '_{:d}'.format(idx)
             partition['piece_idx'] = piece_idx_start + idx
             partition['original_layer_name'] = layer_info['layer_name']
+            if layer_info['input_height'] > 1:
+                min_unit_start = min_unit_end
+                min_unit_end = min(min_unit_start + max(math.floor(layer_info['input_height'] / num_partitions), 1), layer_info['input_height'])
+                partition['input_data_location'] = [i for i in range(min_unit_start, min_unit_end)]
             partition['input_height'] = 1
             partition['input_width'] = 1
             partition['input_channel'] = min_unit
             partition['workload_size'] /= num_partitions
             partition['memory'] /= num_partitions
             min_unit_partitions.append(partition)
-        return min_unit_partitions
+            output_data_location += [(partition['layer_name'], 0), (partition['layer_name'], partition['output_channel'])]
+        return min_unit_partitions, output_data_location
 
     def data_gen(self, net_manager=None, svc_arrival=None, apply_partition=None, layer_coarsening=False):
         self.service_info = [deepcopy(config.service_info[i]) for i in range(self.num_services)]
@@ -187,17 +188,16 @@ class DAGDataSet:
                         else:
                             min_unit = 256
 
-                        min_unit_partitions = self.fc_partitioning(layer_info, num_partitions=num_partitions, min_unit=min_unit, piece_idx_start=piece_idx_start)
-                        partitioned_layers.append({'layer_name':layer_info['layer_name'], 'layer_type':layer_info['layer_type'], 'min_unit_partitions':min_unit_partitions})
+                        min_unit_partitions, output_data_location = self.fc_partitioning(layer_info, num_partitions=num_partitions, min_unit=min_unit, piece_idx_start=piece_idx_start)
+                        partitioned_layers.append({'layer_name':layer_info['layer_name'], 'layer_type':layer_info['layer_type'], 'min_unit_partitions':min_unit_partitions, 'output_data_location':output_data_location})
                     else:
                         partitioned_layers.append(layer_info)
                 piece_idx_start += num_partitions
 
-                # predecessor recalculation for the minimum unit partitions
-                partitions = []
+                # calculate input/output slicing
                 for layer_info in partitioned_layers:
-                    if layer_info['layer_type'] in ['cnn','maxpool']:
-                        for partition in layer_info['min_unit_partitions']:
+                    for partition in layer_info['min_unit_partitions']:
+                        if 'input_data_location' in partition:
                             for pred_layer_name in partition['predecessors']:
                                 pred_layer = next(l for l in partitioned_layers if l['layer_name'] == pred_layer_name)
                                 partition['input_slicing'] = dict()
@@ -209,6 +209,24 @@ class DAGDataSet:
                                             partition['input_slicing'][pred_layer['output_data_location'][i][0]][1] = pred_layer['output_data_location'][i][1]
                                     else:
                                         partition['input_slicing'][pred_layer['output_data_location'][i][0]] = [pred_layer['output_data_location'][i][1], pred_layer['output_data_location'][i][1]]
+                        else:
+                            partition['input_slicing'] = dict()
+                            for pred_layer_name in partition['predecessors']:
+                                pred_layer = next(l for l in partitioned_layers if l['layer_name'] == pred_layer_name)
+                                for (layer_name, location) in pred_layer['output_data_location']:
+                                    if layer_name in partition['input_slicing']:
+                                        if partition['input_slicing'][layer_name][0] > location:
+                                            partition['input_slicing'][layer_name][0] = location
+                                        elif partition['input_slicing'][layer_name][1] < location:
+                                            partition['input_slicing'][layer_name][1] = location
+                                    else:
+                                        partition['input_slicing'][layer_name] = [location, location]
+
+                # predecessor recalculation for the minimum unit partitions
+                partitions = []
+                for layer_info in partitioned_layers:
+                    if layer_info['layer_type'] in ['cnn','maxpool']:
+                        for partition in layer_info['min_unit_partitions']:
                             predecessors = []
                             input_data_size = []
                             for pred_layer_name in partition['predecessors']:
