@@ -53,7 +53,7 @@ class DAGDataSet:
         # Return optimized DNN blocks
         if apply_partition == 'horizontal' and graph_coarsening == True:
             from mgp import MultilevelGraphPartitioning
-            MGP = MultilevelGraphPartitioning(dataset=self, k=21)
+            MGP = MultilevelGraphPartitioning(dataset=self, k=3)
             self.coarsened_graph = MGP.run_algo()
             self.graph = [np.unique(cg) for cg in self.coarsened_graph]
             self.num_pieces = sum([len(np.unique(cg)) for cg in self.coarsened_graph])
@@ -121,7 +121,7 @@ class DAGDataSet:
             partition['workload_size'] /= num_partitions
             partition['memory'] /= num_partitions
             min_unit_partitions.append(partition)
-            output_data_location += [(partition['layer_name'], 0), (partition['layer_name'], partition['output_channel'])]
+            output_data_location += [(partition['layer_name'], 0), (partition['layer_name'], partition['output_channel']-1)]
         return min_unit_partitions, output_data_location
 
     def data_gen(self, net_manager=None, svc_arrival=None, apply_partition=None, layer_coarsening=False):
@@ -209,7 +209,7 @@ class DAGDataSet:
                                             partition['input_slicing'][pred_layer['output_data_location'][i][0]][1] = pred_layer['output_data_location'][i][1]
                                     else:
                                         partition['input_slicing'][pred_layer['output_data_location'][i][0]] = [pred_layer['output_data_location'][i][1], pred_layer['output_data_location'][i][1]]
-                        else:
+                        else: # fc, avgpool exception
                             partition['input_slicing'] = dict()
                             for pred_layer_name in partition['predecessors']:
                                 pred_layer = next(l for l in partitioned_layers if l['layer_name'] == pred_layer_name)

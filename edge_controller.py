@@ -1,13 +1,13 @@
 from common import *
 from dag_data_generator import DAGDataSet
-from algorithms.Greedy import HEFT
+from algorithms.Greedy import HEFT, Greedy
 
 
 def scheduler(recv_schedule_list, recv_schedule_lock, send_schedule_list, send_schedule_lock, _stop_event):
     with open("outputs/net_manager_backup", "rb") as fp:
         net_manager = pickle.load(fp)
     dataset = DAGDataSet(num_timeslots=1, num_services=1, net_manager=net_manager, apply_partition="horizontal", graph_coarsening=True)
-    algorithm = HEFT(dataset=dataset)
+    algorithm = Greedy(dataset=dataset)
     algorithm.rank = "rank_u"
     (([x], [y]), [latency], took) = algorithm.run_algo()
     print(x, y, latency, took)
@@ -18,6 +18,8 @@ def scheduler(recv_schedule_list, recv_schedule_lock, send_schedule_list, send_s
             print(partition.layer_name, partition.input_slicing)
             for slicing in partition.input_slicing.values():
                 print("[{}:{},:,:]".format(slicing[0], slicing[1]))
+        else:
+            print(partition.layer_name, "has no input slicing") # first layer exception
     return 
 
 def processing(inputs, model):
