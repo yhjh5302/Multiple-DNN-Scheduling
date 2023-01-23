@@ -244,7 +244,7 @@ class Greedy:
         self.num_pieces = sum([len(np.unique(cg)) for cg in self.coarsened_graph])
         self.piece_device_map = np.array([idx for idx, cg in enumerate(self.coarsened_graph) for _ in np.unique(cg)])
 
-        self.rank = 'rank_u'
+        self.rank = 'rank_d'
         self.server_lst = list(self.system_manager.local.keys()) + list(self.system_manager.edge.keys())
     
     def get_uncoarsened_x(self, x):
@@ -272,9 +272,12 @@ class Greedy:
         if self.rank == 'rank_oct':
             y = self.system_manager.rank_oct_schedule
             rank = self.system_manager.rank_oct
-        else:
+        elif self.rank == 'rank_u':
             y = self.system_manager.rank_u_schedule
             rank = self.system_manager.rank_u
+        elif self.rank == 'rank_d':
+            y = self.system_manager.rank_d_schedule
+            rank = self.system_manager.rank_d
 
         partition_piece_map = np.zeros(self.num_partitions, dtype=np.int32)
         idx_start = idx_end = start = end = 0
@@ -319,26 +322,26 @@ class Greedy:
                     x[p_id] = temp_x
         print("took: {:.5f}, latency: {:.5f}".format(time.time() - timer, minimum_latency))
         
-        l = np.inf
-        while l > minimum_latency:
-            l = minimum_latency
-            for p_id in piece_order:
-                minimum_latency = np.inf
-                for s_id in self.server_lst:
-                    if s_id == 0:
-                        s_id = self.piece_device_map[p_id]
-                    temp_x = x[p_id]
-                    x[p_id] = s_id
-                    self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(x))
-                    if self.system_manager.constraint_chk(s_id=s_id):
-                        latency = np.max(self.system_manager.total_time_dp())
-                        if latency < minimum_latency:
-                            minimum_latency = latency
-                        else:
-                            x[p_id] = temp_x
-                    else:
-                        x[p_id] = temp_x
-            print("took: {:.5f}, latency: {:.5f}".format(time.time() - timer, minimum_latency))
+        # l = np.inf
+        # while l > minimum_latency:
+        #     l = minimum_latency
+        #     for p_id in piece_order:
+        #         minimum_latency = np.inf
+        #         for s_id in self.server_lst:
+        #             if s_id == 0:
+        #                 s_id = self.piece_device_map[p_id]
+        #             temp_x = x[p_id]
+        #             x[p_id] = s_id
+        #             self.system_manager.set_env(deployed_server=self.get_uncoarsened_x(x))
+        #             if self.system_manager.constraint_chk(s_id=s_id):
+        #                 latency = np.max(self.system_manager.total_time_dp())
+        #                 if latency < minimum_latency:
+        #                     minimum_latency = latency
+        #                 else:
+        #                     x[p_id] = temp_x
+        #             else:
+        #                 x[p_id] = temp_x
+        #     print("took: {:.5f}, latency: {:.5f}".format(time.time() - timer, minimum_latency))
 
         x = np.array([self.get_uncoarsened_x(x) for _ in range(self.num_timeslots)], dtype=np.int32)
         y = np.array([y for _ in range(self.num_timeslots)], dtype=np.int32)

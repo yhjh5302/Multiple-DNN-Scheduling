@@ -1,4 +1,4 @@
-import threading, time, argparse, os, pickle
+import threading, time, argparse, os, pickle, numpy as np
 import torch
 import torch.distributed as dist
 
@@ -56,8 +56,11 @@ def send_thread(schedule_list, schedule_lock, data_list, data_lock, _stop_event)
         else:
             time.sleep(0.000001)
 
-def send_schedule(info):
-    dist.send(tensor=info, dst=0, tag=SCHEDULE_TAG)
+def send_request(request):
+    dist.send(tensor=request, dst=0, tag=SCHEDULE_TAG)
+
+def send_schedule(schedule, dst):
+    dist.send(tensor=schedule, dst=dst, tag=SCHEDULE_TAG)
 
 def schedule_recv_thread(recv_schedule_list, recv_schedule_lock, send_schedule_list, send_schedule_lock, _stop_event):
     while _stop_event.is_set() == False:
@@ -67,6 +70,3 @@ def schedule_recv_thread(recv_schedule_list, recv_schedule_lock, send_schedule_l
             recv_schedule_list.extend(schedule_list[0])
         with send_schedule_lock:
             send_schedule_list.extend(schedule_list[1])
-
-def processing(inputs):
-    return 0
