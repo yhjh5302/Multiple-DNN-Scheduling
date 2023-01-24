@@ -4,6 +4,9 @@ import torch.distributed as dist
 
 SCHEDULE_TAG = 0
 QUEUE_LENGTH = 10
+SEND_FLAG = 0
+RECV_FLAG = 1
+schedule_shape = ['recv/send flag', 'layer_id', 'src', 'dst', 'input_height', 'input_width', 'input_channel', 'slicing_start', 'slicing_end', 'tag']
 
 def str2bool(v):
     if isinstance(v, bool):
@@ -32,9 +35,14 @@ def recv_thread(schedule_list, schedule_lock, data_list, data_lock, _stop_event)
                 schedules = schedule_list.pop(0)
             # 스레드를 열고 input data를 동시에 받음
             data = []
+            threads = []
             for i, (src, input_shape, tag) in enumerate(schedules):
-                data.append(torch.Empty(input_shape))
-                threading.Thread(target=dist.recv, kwargs={'tensor':data[i], 'src':src, 'tag':tag}).start()
+                data.append(torch.empty(input_shape))
+                threads.append(threading.Thread(target=dist.recv, kwargs={'tensor':data[i], 'src':src, 'tag':tag}))
+            for th in threads:
+                th.start()
+            for th in threads:
+                th.join()
             # scheduling decision에 있는 애들이 모두 받아졌으면 merge함
             input_data = torch.cat(data)
             with data_lock:
@@ -56,17 +64,29 @@ def send_thread(schedule_list, schedule_lock, data_list, data_lock, _stop_event)
         else:
             time.sleep(0.000001)
 
-def send_request(request):
+# smart cameras
+def send_request():
+    request = torch.empty(len(schedule_shape), dtype=torch.int32)
     dist.send(tensor=request, dst=0, tag=SCHEDULE_TAG)
+
+def recv_schedule_thread(recv_schedule_list, recv_schedule_lock, send_schedule_list, send_schedule_lock, proc_schedule_list, proc_schedule_lock, _stop_event):
+    while _stop_event.is_set() == False:
+        schedule = torch.empty(len(schedule_shape), dtype=torch.int32)
+        dist.recv(tensor=schedule, src=0, tag=SCHEDULE_TAG)
+        if schedule[0] == RECV_FLAG:
+            with recv_schedule_lock:
+                recv_schedule_list.append(schedule)
+            with proc_schedule_lock:
+                proc_schedule_list.append(schedule[1])
+        elif schedule[0] == SEND_FLAG:
+            with send_schedule_lock:
+                send_schedule_list.append(schedule)
+        print("schedule queue length", len(recv_schedule_list), len(send_schedule_list))
+
+# edge server
+def recv_request():
+    request = torch.empty(len(schedule_shape), dtype=torch.int32)
+    return dist.recv(tensor=request, src=None, tag=SCHEDULE_TAG)
 
 def send_schedule(schedule, dst):
     dist.send(tensor=schedule, dst=dst, tag=SCHEDULE_TAG)
-
-def schedule_recv_thread(recv_schedule_list, recv_schedule_lock, send_schedule_list, send_schedule_lock, _stop_event):
-    while _stop_event.is_set() == False:
-        schedule_list = torch.empty(schedule_shape, dtype=torch.int16)
-        dist.recv(tensor=schedule_list, src=0, tag=SCHEDULE_TAG)
-        with recv_schedule_lock:
-            recv_schedule_list.extend(schedule_list[0])
-        with send_schedule_lock:
-            send_schedule_list.extend(schedule_list[1])

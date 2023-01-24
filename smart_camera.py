@@ -3,11 +3,11 @@ from models import VGGNet
 import cv2, logging
 
 
-def data_generator(data_list, data_lock):
+def data_generator(args, data_list, data_lock):
     # video data load
     vid = cv2.VideoCapture(args.data_path+args.video_name)
     fps = vid.get(cv2.CAP_PROP_FPS)
-    delay = int(600/fps)
+    delay = 10000 # int(600/fps)
     roi_mask = cv2.imread(args.data_path+args.roi_name, cv2.IMREAD_UNCHANGED)
     roi_mask = cv2.resize(roi_mask, args.resolution, interpolation=cv2.INTER_CUBIC)
 
@@ -54,10 +54,11 @@ def data_generator(data_list, data_lock):
             cv2.imshow('boxedFrame', boxedFrame)
 
         # send image info to the master and recv scheduling decision
-        info = torch.Tensor(boxedFrame.shape).type(dtype=torch.int16)
-        send_request(info)
+        send_request()
+        data = torch.tensor(boxedFrame, dtype=torch.int8)
         with data_lock:
-            data_list.append(boxedFrame)
+            data_list.append(data)
+        time.sleep(10)
 
         if cv2.waitKey(delay) == ord('q'):
             break
@@ -72,7 +73,7 @@ if __name__ == "__main__":
     parser.add_argument('--master_addr', default='localhost', type=str, help='Master node ip address')
     parser.add_argument('--master_port', default='30000', type=str, help='Master node port')
     parser.add_argument('--rank', default=0, type=int, help='Master node port', required=True)
-    parser.add_argument('--data_path', default='./Data/', type=str, help='Image frame data path')
+    parser.add_argument('--data_path', default='/home/jin/git/DNN/Data/AIC22_Track1_MTMC_Tracking/train/S03/c011/', type=str, help='Image frame data path')
     parser.add_argument('--video_name', default='vdo.avi', type=str, help='Video file name')
     parser.add_argument('--roi_name', default='roi.jpg', type=str, help='RoI file name')
     parser.add_argument('--num_nodes', default=2, type=int, help='Number of nodes')
@@ -101,18 +102,21 @@ if __name__ == "__main__":
     recv_data_lock = threading.Lock()
     send_data_list = []
     send_data_lock = threading.Lock()
-    recv_schedule_list = [[] for i in range(QUEUE_LENGTH)]
+    recv_schedule_list = []
     recv_schedule_lock = threading.Lock()
-    send_schedule_list = [[] for i in range(QUEUE_LENGTH)]
+    send_schedule_list = []
     send_schedule_lock = threading.Lock()
+    proc_schedule_list = []
+    proc_schedule_lock = threading.Lock()
 
-    threading.Thread(target=schedule_recv_thread, args=(recv_schedule_list, recv_schedule_lock, send_schedule_list, send_schedule_lock, _stop_event)).start()
+    threading.Thread(target=data_generator, args=(args, send_data_list, send_data_lock)).start()
+    threading.Thread(target=recv_schedule_thread, args=(recv_schedule_list, recv_schedule_lock, send_schedule_list, send_schedule_lock, proc_schedule_list, proc_schedule_lock, _stop_event)).start()
+    input("done")
     threading.Thread(target=recv_thread, args=(recv_schedule_list, recv_schedule_lock, recv_data_list, recv_data_lock, _stop_event)).start()
     threading.Thread(target=send_thread, args=(send_schedule_list, send_schedule_lock, send_data_list, send_data_lock, _stop_event)).start()
-    threading.Thread(target=data_generator, args=(send_data_list, send_data_lock)).start()
 
     while _stop_event.is_set() == False:
         inputs = bring_data(recv_data_list, recv_data_lock, _stop_event)
-        outputs = model(inputs)
+        outputs = processing(model, inputs, proc_schedule_list, proc_schedule_lock)
         with send_data_lock:
             send_data_list.append(outputs)

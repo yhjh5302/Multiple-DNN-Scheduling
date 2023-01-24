@@ -6,61 +6,82 @@ import torchvision.transforms as transforms
 
 import math
 
+
 class AlexNet(nn.Module):
-    def __init__(self, num_classes=1000):
+    def __init__(self, num_classes: int = 80) -> None:
         super(AlexNet, self).__init__()
-        self.features1 = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=11, stride=4, padding=2),
+        device = torch.device('cpu')
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=11, stride=4, padding=0),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=3, stride=2),
         )
-        self.features2 = nn.Sequential(
+        self.maxpool1 = nn.Sequential(
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=0),
+        )
+        self.conv2 = nn.Sequential(
             nn.Conv2d(64, 192, kernel_size=5, padding=2),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=3, stride=2),
         )
-        self.features3 = nn.Sequential(
+        self.maxpool2 = nn.Sequential(
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=0),
+        )
+        self.conv3 = nn.Sequential(
             nn.Conv2d(192, 384, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
         )
-        self.features4 = nn.Sequential(
+        self.conv4 = nn.Sequential(
             nn.Conv2d(384, 256, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
         )
-        self.features5 = nn.Sequential(
+        self.conv5 = nn.Sequential(
             nn.Conv2d(256, 256, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=3, stride=2),
-            nn.AdaptiveAvgPool2d((6, 6)),
-            nn.Dropout(),
         )
-        self.classifier1 = nn.Sequential(
+        self.maxpool3 = nn.Sequential(
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=0),
+        )
+        self.fc1 = nn.Sequential(
             nn.Linear(256 * 6 * 6, 4096),
             nn.ReLU(inplace=True),
-            nn.Dropout(),
         )
-        self.classifier2 = nn.Sequential(
+        self.fc2 = nn.Sequential(
             nn.Linear(4096, 4096),
             nn.ReLU(inplace=True),
         )
-        self.classifier3 = nn.Sequential(
-            nn.Linear(4096, 1000),
+        self.fc3 = nn.Sequential(
+            nn.Linear(4096, num_classes),
         )
+        self.load_weights()
+
+    def load_weights(self):
+        self.conv1.load_state_dict(torch.load('./cifar_AlexNet_conv1.pth', map_location=torch.device(device)))
+        self.conv2.load_state_dict(torch.load('./cifar_AlexNet_conv2.pth', map_location=torch.device(device)))
+        self.conv3.load_state_dict(torch.load('./cifar_AlexNet_conv3.pth', map_location=torch.device(device)))
+        self.conv4.load_state_dict(torch.load('./cifar_AlexNet_conv4.pth', map_location=torch.device(device)))
+        self.conv5.load_state_dict(torch.load('./cifar_AlexNet_conv5.pth', map_location=torch.device(device)))
+        self.fc1.load_state_dict(torch.load('./cifar_AlexNet_fc1.pth', map_location=torch.device(device)))
+        self.fc2.load_state_dict(torch.load('./cifar_AlexNet_fc2.pth', map_location=torch.device(device)))
+        self.fc3.load_state_dict(torch.load('./cifar_AlexNet_fc3.pth', map_location=torch.device(device)))
 
     def forward(self, x):
-        x = self.features1(x)
-        x = self.features2(x)
-        x = self.features3(x)
-        x = self.features4(x)
-        x = self.features5(x)
+        x = self.conv1(x)
+        x = self.maxpool1(x)
+        x = self.conv2(x)
+        x = self.maxpool2(x)
+        x = self.conv3(x)
+        x = self.conv4(x)
+        x = self.conv5(x)
+        x = self.maxpool3(x)
         x = torch.flatten(x, 1)
-        x = self.classifier1(x)
-        x = self.classifier2(x)
-        x = self.classifier3(x)
+        x = self.fc1(x)
+        x = self.fc2(x)
+        x = self.fc3(x)
         return x
 
+
+
 class GoogLeNet(nn.Module):
-    def __init__(self, num_classes: int = 1000, transform_input: bool = True, init_weights: bool = True) -> None:
+    def __init__(self, num_classes: int = 80, transform_input: bool = True, init_weights: bool = True) -> None:
         super(GoogLeNet, self).__init__()
         self.transform_input = transform_input
         self.conv1 = nn.Sequential(
@@ -452,7 +473,7 @@ class GoogLeNet(nn.Module):
         return x
 
 class MobileNetV1(nn.Module):
-    def __init__(self, num_classes: int = 1000, init_weights: bool = True ) -> None:
+    def __init__(self, num_classes: int = 80, init_weights: bool = True ) -> None:
         super(MobileNetV1, self).__init__()
         self.conv1 = nn.Sequential(
             nn.Conv2d(3, 32, kernel_size=3, padding=1, stride=2, bias=False),
@@ -564,7 +585,7 @@ class MobileNetV1(nn.Module):
             nn.ReLU(inplace=True),
             nn.AdaptiveAvgPool2d(1),
         )
-        self.fc = nn.Linear(1024, 1000)
+        self.fc = nn.Linear(1024, 80)
         if init_weights:
             self._initialize_weights()
 
@@ -602,7 +623,7 @@ class MobileNetV1(nn.Module):
                 nn.init.zeros_(m.bias)
 
 class VGGNet(nn.Module):
-    def __init__(self, num_classes: int = 1000, init_weights: bool = True ) -> None:
+    def __init__(self, num_classes: int = 80, init_weights: bool = True ) -> None:
         super(VGGNet, self).__init__()
         self.features1_conv1 = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=3, padding=1),
@@ -673,7 +694,7 @@ class VGGNet(nn.Module):
             nn.ReLU(inplace=True),
         )
         self.classifier3 = nn.Sequential(
-            nn.Linear(4096, 1000),
+            nn.Linear(4096, 80),
         )
         if init_weights:
             self._initialize_weights()
@@ -709,7 +730,7 @@ class VGGNet(nn.Module):
                 nn.init.constant_(m.bias, 0)
 
 class ResNet101(nn.Module):
-    def __init__(self, num_classes: int = 1000, init_weights: bool = True ) -> None:
+    def __init__(self, num_classes: int = 80, init_weights: bool = True ) -> None:
         super(ResNet101, self).__init__()
         self.layer0 = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False),
@@ -1065,7 +1086,7 @@ class ResNet101(nn.Module):
             nn.BatchNorm2d(2048),
         )
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(2048, 1000)
+        self.fc = nn.Linear(2048, 80)
         if init_weights:
             self._initialize_weights()
 
@@ -1228,7 +1249,7 @@ class ResNet101(nn.Module):
                 nn.init.zeros_(m.bias)
 
 class ResNet152(nn.Module):
-    def __init__(self, num_classes: int = 1000, init_weights: bool = True ) -> None:
+    def __init__(self, num_classes: int = 80, init_weights: bool = True ) -> None:
         super(ResNet152, self).__init__()
         self.layer0 = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False),
@@ -1754,7 +1775,7 @@ class ResNet152(nn.Module):
             nn.BatchNorm2d(2048),
         )
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(2048, 1000)
+        self.fc = nn.Linear(2048, 80)
         if init_weights:
             self._initialize_weights()
 

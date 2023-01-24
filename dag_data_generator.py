@@ -116,9 +116,10 @@ class DAGDataSet:
                 min_unit_start = min_unit_end
                 min_unit_end = min(min_unit_start + max(math.floor(layer_info['input_height'] / num_partitions), 1), layer_info['input_height'])
                 partition['input_data_location'] = [i for i in range(min_unit_start, min_unit_end)]
-            partition['input_height'] = 1
-            partition['input_width'] = 1
-            partition['input_channel'] = min_unit
+            else:
+                partition['input_height'] = 1
+                partition['input_width'] = 1
+                partition['input_channel'] = min_unit
             partition['workload_size'] /= num_partitions
             partition['memory'] /= num_partitions
             min_unit_partitions.append(partition)
@@ -205,6 +206,7 @@ class DAGDataSet:
 
                 # calculate input/output slicing
                 for layer_info in partitioned_layers:
+                    start_input_index = 0
                     for partition in layer_info['min_unit_partitions']:
                         if 'input_data_location' in partition:
                             for pred_layer_name in partition['predecessors']:
@@ -220,7 +222,7 @@ class DAGDataSet:
                                         partition['input_slicing'][pred_layer['output_data_location'][i][0]] = [pred_layer['output_data_location'][i][1], pred_layer['output_data_location'][i][1]]
                             if len(partition['predecessors']) < 1:
                                 partition['input_slicing'] = dict()
-                                partition['input_slicing']['input'] = [0, partition['input_height']]
+                                partition['input_slicing']['input'] = [partition['input_data_location'][0], partition['input_data_location'][-1]]
                         else: # fc, avgpool exception
                             partition['input_slicing'] = dict()
                             for pred_layer_name in partition['predecessors']:

@@ -93,7 +93,7 @@ class MultilevelGraphPartitioning:
             graph = np.arange(graph_size)
             theta = math.floor(self.k * 2)
             partition_piece_map = np.array([c.piece_idx for c in self.system_manager.service_set.services[svc_id].partitions])
-            print(svc_id, graph_size)
+            # print(svc_id, graph_size)
 
             # init times
             self.proc_time = np.zeros(graph_size)
