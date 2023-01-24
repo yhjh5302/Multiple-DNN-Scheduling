@@ -1,5 +1,5 @@
 from common import *
-from models import VGGNet
+from models import AlexNet
 from dag_data_generator import DAGDataSet
 from algorithms.Greedy import HEFT, Greedy
 
@@ -27,23 +27,30 @@ def scheduler(recv_schedule_list, recv_schedule_lock, send_schedule_list, send_s
         for p_id in order:
             p = partitions[p_id]
             # p가 받아야할 input 데이터들에 대해서
-            for pred, slicing_index in p.input_slicing.items():
+            for i, (pred, slicing_index) in enumerate(p.input_slicing.items()):
+                if i == 0:
+                    proc_flag = True
+                else:
+                    proc_flag = False
+                # print("proc_flag", proc_flag)
                 if pred == 'input':
                     src = input_src
                 else:
                     src = server_mapping[server[next(i for i, l in enumerate(partitions) if l.layer_name == pred)]]
                 dst = server_mapping[server[p_id]]
-                schedule = torch.tensor([dataset.partition_layer_map[p_id], src, dst, p.input_height, p.input_width, p.input_channel, slicing_index[0], slicing_index[1], tag], dtype=torch.int32)
+                schedule = torch.tensor([dataset.partition_layer_map[p_id], src, dst, p.input_height, p.input_width, p.input_channel, slicing_index[0], slicing_index[1], tag, proc_flag], dtype=torch.int32)
                 tag += 1
                 # dst는 데이터를 받는 역할을 함
                 # 데이터의 dst에 스케줄 보냄
                 if dst == 0:
+                    if schedule[9] == True:
+                        with proc_schedule_lock:
+                            proc_schedule_list.append(schedule[0])
                     with recv_schedule_lock:
                         recv_schedule_list.append(torch.cat([torch.tensor([RECV_FLAG], dtype=torch.int32), schedule]))
-                    with proc_schedule_lock:
-                        proc_schedule_list.append(schedule[0])
                 else:
                     send_schedule(schedule=torch.cat([torch.tensor([RECV_FLAG], dtype=torch.int32), schedule]), dst=dst)
+                # print(schedule)
                 # src는 데이터를 보내는 역할을 함
                 # 데이터의 src에 스케줄 보냄
                 if src == 0:
@@ -51,7 +58,6 @@ def scheduler(recv_schedule_list, recv_schedule_lock, send_schedule_list, send_s
                         send_schedule_list.append(torch.cat([torch.tensor([SEND_FLAG], dtype=torch.int32), schedule]))
                 else:
                     send_schedule(schedule=torch.cat([torch.tensor([SEND_FLAG], dtype=torch.int32), schedule]), dst=src)
-                print("schedule queue length", len(recv_schedule_list), len(send_schedule_list))
         print(time.time() - start)
 
 
@@ -76,7 +82,7 @@ if __name__ == "__main__":
     print(device, torch.cuda.get_device_name(0))
 
     # model loading
-    model = VGGNet().eval()
+    model = AlexNet().eval()
 
     # cluster connection setup
     print('Waiting for the cluster connection...')
@@ -96,14 +102,15 @@ if __name__ == "__main__":
     send_schedule_lock = threading.Lock()
     proc_schedule_list = []
     proc_schedule_lock = threading.Lock()
+    internal_data_list = dict()
+    internal_data_lock = threading.Lock()
 
     threading.Thread(target=scheduler, args=(recv_schedule_list, recv_schedule_lock, send_schedule_list, send_schedule_lock, proc_schedule_list, proc_schedule_lock, _stop_event)).start()
-    input()
-    threading.Thread(target=recv_thread, args=(recv_schedule_list, recv_schedule_lock, recv_data_list, recv_data_lock, _stop_event)).start()
-    threading.Thread(target=send_thread, args=(send_schedule_list, send_schedule_lock, send_data_list, send_data_lock, _stop_event)).start()
+    threading.Thread(target=recv_thread, args=(args.rank, recv_schedule_list, recv_schedule_lock, recv_data_list, recv_data_lock, internal_data_list, internal_data_lock, _stop_event)).start()
+    threading.Thread(target=send_thread, args=(args.rank, send_schedule_list, send_schedule_lock, send_data_list, send_data_lock, internal_data_list, internal_data_lock, _stop_event)).start()
 
     while _stop_event.is_set() == False:
         inputs = bring_data(recv_data_list, recv_data_lock, _stop_event)
-        outputs = processing(model, inputs, proc_schedule_list, proc_schedule_lock)
+        outputs = processing(model, inputs, proc_schedule_list, proc_schedule_lock, _stop_event)
         with send_data_lock:
             send_data_list.append(outputs)

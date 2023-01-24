@@ -10,7 +10,7 @@ import math
 class AlexNet(nn.Module):
     def __init__(self, num_classes: int = 80) -> None:
         super(AlexNet, self).__init__()
-        device = torch.device('cpu')
+        self.device = torch.device('cpu')
         self.conv1 = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=11, stride=4, padding=0),
             nn.ReLU(inplace=True),
@@ -51,31 +51,42 @@ class AlexNet(nn.Module):
         self.fc3 = nn.Sequential(
             nn.Linear(4096, num_classes),
         )
-        self.load_weights()
+        # self.load_weights()
 
     def load_weights(self):
-        self.conv1.load_state_dict(torch.load('./cifar_AlexNet_conv1.pth', map_location=torch.device(device)))
-        self.conv2.load_state_dict(torch.load('./cifar_AlexNet_conv2.pth', map_location=torch.device(device)))
-        self.conv3.load_state_dict(torch.load('./cifar_AlexNet_conv3.pth', map_location=torch.device(device)))
-        self.conv4.load_state_dict(torch.load('./cifar_AlexNet_conv4.pth', map_location=torch.device(device)))
-        self.conv5.load_state_dict(torch.load('./cifar_AlexNet_conv5.pth', map_location=torch.device(device)))
-        self.fc1.load_state_dict(torch.load('./cifar_AlexNet_fc1.pth', map_location=torch.device(device)))
-        self.fc2.load_state_dict(torch.load('./cifar_AlexNet_fc2.pth', map_location=torch.device(device)))
-        self.fc3.load_state_dict(torch.load('./cifar_AlexNet_fc3.pth', map_location=torch.device(device)))
+        self.conv1.load_state_dict(torch.load('./cifar_AlexNet_conv1.pth', map_location=torch.device(self.device)))
+        self.conv2.load_state_dict(torch.load('./cifar_AlexNet_conv2.pth', map_location=torch.device(self.device)))
+        self.conv3.load_state_dict(torch.load('./cifar_AlexNet_conv3.pth', map_location=torch.device(self.device)))
+        self.conv4.load_state_dict(torch.load('./cifar_AlexNet_conv4.pth', map_location=torch.device(self.device)))
+        self.conv5.load_state_dict(torch.load('./cifar_AlexNet_conv5.pth', map_location=torch.device(self.device)))
+        self.fc1.load_state_dict(torch.load('./cifar_AlexNet_fc1.pth', map_location=torch.device(self.device)))
+        self.fc2.load_state_dict(torch.load('./cifar_AlexNet_fc2.pth', map_location=torch.device(self.device)))
+        self.fc3.load_state_dict(torch.load('./cifar_AlexNet_fc3.pth', map_location=torch.device(self.device)))
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.maxpool1(x)
-        x = self.conv2(x)
-        x = self.maxpool2(x)
-        x = self.conv3(x)
-        x = self.conv4(x)
-        x = self.conv5(x)
-        x = self.maxpool3(x)
-        x = torch.flatten(x, 1)
-        x = self.fc1(x)
-        x = self.fc2(x)
-        x = self.fc3(x)
+    def forward(self, x, i):
+        if i == 0:
+            x = self.conv1(x)
+        if i == 1:
+            x = self.maxpool1(x)
+        if i == 2:
+            x = self.conv2(x)
+        if i == 3:
+            x = self.maxpool2(x)
+        if i == 4:
+            x = self.conv3(x)
+        if i == 5:
+            x = self.conv4(x)
+        if i == 6:
+            x = self.conv5(x)
+        if i == 7:
+            x = self.maxpool3(x)
+        if i == 8:
+            x = torch.flatten(x, 1)
+            x = self.fc1(x)
+        if i == 9:
+            x = self.fc2(x)
+        if i == 10:
+            x = self.fc3(x)
         return x
 
 

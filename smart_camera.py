@@ -1,6 +1,7 @@
 from common import *
-from models import VGGNet
+from models import AlexNet
 import cv2, logging
+
 
 
 def data_generator(args, data_list, data_lock):
@@ -13,6 +14,7 @@ def data_generator(args, data_list, data_lock):
 
     kernel = None
     backgroundObject = cv2.createBackgroundSubtractorMOG2(history=1000, varThreshold=128, detectShadows=False)
+    transform = transforms.Compose([transforms.ToTensor(), transforms.Resize(size=(224,224),interpolation=0), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     while vid.isOpened():
         _, frame = vid.read()
 
@@ -55,10 +57,9 @@ def data_generator(args, data_list, data_lock):
 
         # send image info to the master and recv scheduling decision
         send_request()
-        data = torch.tensor(boxedFrame, dtype=torch.int8)
         with data_lock:
-            data_list.append(data)
-        time.sleep(10)
+            data_list.append(transform(boxedFrame).unsqueeze(0))
+        time.sleep(60)
 
         if cv2.waitKey(delay) == ord('q'):
             break
@@ -88,7 +89,7 @@ if __name__ == "__main__":
     print(device, torch.cuda.get_device_name(0))
 
     # model loading
-    model = VGGNet().eval()
+    model = AlexNet().eval()
 
     # cluster connection setup
     print('Waiting for the cluster connection...')
@@ -108,15 +109,16 @@ if __name__ == "__main__":
     send_schedule_lock = threading.Lock()
     proc_schedule_list = []
     proc_schedule_lock = threading.Lock()
+    internal_data_list = dict()
+    internal_data_lock = threading.Lock()
 
     threading.Thread(target=data_generator, args=(args, send_data_list, send_data_lock)).start()
     threading.Thread(target=recv_schedule_thread, args=(recv_schedule_list, recv_schedule_lock, send_schedule_list, send_schedule_lock, proc_schedule_list, proc_schedule_lock, _stop_event)).start()
-    input("done")
-    threading.Thread(target=recv_thread, args=(recv_schedule_list, recv_schedule_lock, recv_data_list, recv_data_lock, _stop_event)).start()
-    threading.Thread(target=send_thread, args=(send_schedule_list, send_schedule_lock, send_data_list, send_data_lock, _stop_event)).start()
+    threading.Thread(target=recv_thread, args=(args.rank, recv_schedule_list, recv_schedule_lock, recv_data_list, recv_data_lock, internal_data_list, internal_data_lock, _stop_event)).start()
+    threading.Thread(target=send_thread, args=(args.rank, send_schedule_list, send_schedule_lock, send_data_list, send_data_lock, internal_data_list, internal_data_lock, _stop_event)).start()
 
     while _stop_event.is_set() == False:
         inputs = bring_data(recv_data_list, recv_data_lock, _stop_event)
-        outputs = processing(model, inputs, proc_schedule_list, proc_schedule_lock)
+        outputs = processing(model, inputs, proc_schedule_list, proc_schedule_lock, _stop_event)
         with send_data_lock:
             send_data_list.append(outputs)
