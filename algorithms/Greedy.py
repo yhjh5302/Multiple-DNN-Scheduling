@@ -1,6 +1,7 @@
 import numpy as np
 import time
 from copy import deepcopy
+from queue import PriorityQueue, Queue
 
 
 class Local:
@@ -244,7 +245,7 @@ class Greedy:
         self.num_pieces = sum([len(np.unique(cg)) for cg in self.coarsened_graph])
         self.piece_device_map = np.array([idx for idx, cg in enumerate(self.coarsened_graph) for _ in np.unique(cg)])
 
-        self.rank = 'rank_d'
+        self.rank = 'rank_u'
         self.server_lst = list(self.system_manager.local.keys()) + list(self.system_manager.edge.keys())
     
     def get_uncoarsened_x(self, x):
@@ -347,3 +348,97 @@ class Greedy:
         y = np.array([y for _ in range(self.num_timeslots)], dtype=np.int32)
         self.system_manager.set_env(deployed_server=x[0], execution_order=y[0])
         return ((x, y), [np.max(self.system_manager.total_time_dp())], time.time() - timer)
+
+
+class E_HEFT:
+    def __init__(self, dataset):
+        self.dataset = dataset
+        self.system_manager = dataset.system_manager
+        self.num_servers = dataset.num_servers
+        self.num_timeslots = dataset.num_timeslots
+        self.num_partitions = len(self.dataset.svc_set.partitions)
+
+        self.rank = 'rank_u'
+        # alpha_q -> 최대 매칭 파티션 개수 배율
+        self.alpha_q = 1.1
+        # 실제 사용 서버 목록
+        self.server_lst = list(self.system_manager.local.keys()) + list(self.system_manager.edge.keys())
+
+    def run_algo(self): 
+        timer = time.time()
+        self.system_manager.init_env()
+        #calc rank_u
+        if self.rank == 'rank_u':
+            self.system_manager.rank_u = np.zeros(self.num_partitions)
+            for partition in self.system_manager.service_set.partitions:
+                if len(partition.predecessors) == 0:
+                    self.system_manager.calc_rank_u_total_average(partition)
+            x = np.full(shape=(self.num_timeslots, self.num_partitions), fill_value=self.system_manager.cloud_id, dtype=np.int32)
+            y = np.array([np.array(sorted(zip(self.system_manager.rank_u, np.arange(self.num_partitions)), reverse=True), dtype=np.int32)[:,1] for _ in range(self.num_timeslots)])
+        
+        #q -> maximum matching number for each devices
+        self.q_max = self.system_manager.computing_frequency[self.server_lst]
+        self.q_max /= np.sum(self.q_max)
+        self.q_max = np.array(self.q_max*self.num_partitions*self.alpha_q,dtype=np.int32)
+
+        #calc PL(b), PL(d)
+        self.calc_t_bd()
+        self.calc_rank_b_on_d(self.server_lst)
+        rank_b_on_d = self.rank_b_on_d[self.server_lst]      #pl_d
+        self.pl_b = np.array([np.array(sorted(zip(self.t_bd[i][self.server_lst], np.arange(len(self.server_lst)))), dtype=np.int32)[:,1] for i in range(self.num_partitions)])
+        self.match_b = np.full(fill_value=-1, dtype=int, shape=(self.num_partitions,))
+        self.match_d = [PriorityQueue(maxsize=m) for m in self.q_max]
+        self.pcount_b = np.zeros(dtype=int, shape=(self.num_partitions,))
+        self.pcount_d = np.zeros(dtype=int, shape=(len(self.server_lst),))
+
+        for t in range(self.num_timeslots):     #while T_cur < T_w
+            q = Queue()
+            for top_rank in y[t]:
+                q.put(top_rank)
+            match_count = 0
+            while not q.empty():
+                top_rank = q.get()
+                pserver = self.pl_b[top_rank,self.pcount_b[top_rank]]
+                self.pcount_b[top_rank] += 1
+                if not self.match_d[pserver].full():
+                    self.match_b[top_rank] = pserver
+                    self.match_d[pserver].put((-rank_b_on_d[pserver,top_rank],top_rank))
+                    match_count += 1
+                else:
+                    lowest_block = self.match_d[pserver].get()
+                    if rank_b_on_d[pserver,top_rank] < (-lowest_block[0]):
+                        self.match_b[top_rank] = pserver
+                        self.match_b[lowest_block[1]] = -1
+                        self.match_d[pserver].put((-rank_b_on_d[pserver,top_rank],top_rank))
+                        q.put(lowest_block[1])
+                    else:
+                        self.match_d[pserver].put(lowest_block)
+                        q.put(top_rank)
+            x[t] = [self.server_lst[self.match_b[i]] for i in range(self.num_partitions)]
+
+            self.system_manager.set_env(deployed_server=x[t], execution_order=y[t])
+            # self.system_manager.after_timeslot(deployed_server=x[t], execution_order=y[t], timeslot=t)
+        
+        x = np.array(x, dtype=np.int32)
+        y = np.array(y, dtype=np.int32)
+        print(self.q_max)
+        print(np.sum(x==19))
+        print(np.sum(x==10))
+        print(np.sum(x==11))
+        print(x)
+        print(y)
+        self.system_manager.set_env(deployed_server=x[0], execution_order=y[0])
+        
+        return ((x, y), [np.max(self.system_manager.total_time_dp())], time.time() - timer)
+
+    def calc_t_bd(self):
+        #processing time of partition b on device d
+        trans = np.zeros(shape=(self.system_manager.num_partitions, 1))
+        for i,partition in enumerate(self.system_manager.service_set.partitions):
+            for pred in partition.predecessors:
+                trans[i] = max(trans[i], partition.get_input_data_size(pred) / self.system_manager.average_bandwidth)
+        self.t_bd = self.system_manager.computation_time_table + trans
+        self.t_avg = np.average(self.t_bd, axis=1)
+
+    def calc_rank_b_on_d(self,server_lst):    # pl rank of b for E_HEFT
+        self.rank_b_on_d = np.zeros(shape=(self.system_manager.num_servers, self.system_manager.num_partitions))

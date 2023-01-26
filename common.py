@@ -35,10 +35,13 @@ def recv_thread(rank, recv_schedule_list, recv_schedule_lock, recv_data_list, re
         if len(recv_schedule_list) > 0:
             data = []
             threads = []
-            # 스레드를 열고 input data를 동시에 받음. 이를 위해서 input에 해당하는 schedule을 모두 pop해서 recv함.
+            # 스레드를 열고 input data를 받음
             while True:
-                with recv_schedule_lock:
-                    schedule = recv_schedule_list.pop(0)
+                if len(recv_schedule_list) > 0:
+                    with recv_schedule_lock:
+                        schedule = recv_schedule_list.pop(0)
+                else:
+                    time.sleep(0.000001)
                 data.append(torch.empty(size=(1, schedule[6], schedule[5], schedule[8]-schedule[7]+1)))
                 if schedule[2].item() == rank: # recv/irecv는 자기자신에게 보낼경우 segfault남.
                     while True:
@@ -49,9 +52,7 @@ def recv_thread(rank, recv_schedule_list, recv_schedule_lock, recv_data_list, re
                             time.sleep(0.000001)
                 else:
                     threads.append(dist.irecv(tensor=data[-1], src=schedule[2].item(), tag=schedule[9].item()))
-                if len(recv_schedule_list) < 1:
-                    time.sleep(0.000001)
-                elif recv_schedule_list[0][10] == True:
+                if len(recv_schedule_list) > 0 and recv_schedule_list[0][10] == True:
                     break
             for recv in threads:
                 recv.wait()

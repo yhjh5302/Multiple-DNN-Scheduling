@@ -2,7 +2,7 @@ import numpy as np
 from dag_data_generator import DAGDataSet
 from algorithms.ServerOrderEvolutionary import ServerOrderGenetic, ServerOrderPSOGA
 from algorithms.ServerEvolutionary import Genetic, PSOGA
-from algorithms.Greedy import Local, Edge, HEFT, CPOP, PEFT, Greedy
+from algorithms.Greedy import Local, Edge, HEFT, CPOP, PEFT, Greedy, E_HEFT
 from operator import itemgetter
 import time
 import sys
@@ -28,7 +28,7 @@ def result(dataset, action_lst, took, algorithm_name):
             else:
                 x = np.array(action[t])
                 dataset.system_manager.set_env(deployed_server=x)
-            # print("#timeslot {} x: {}".format(t, dataset.system_manager.deployed_server))
+            print("#timeslot {} x: {}".format(t, dataset.system_manager.deployed_server))
             # print("#timeslot {} y: {}".format(t, dataset.system_manager.execution_order))
             print("#timeslot {} constraint: {}".format(t, [s.constraint_chk() for s in dataset.system_manager.server.values()]))
             # print("#timeslot {} m: {}".format(t, [(s.memory - max(s.deployed_partition_memory.values(), default=0)) / s.memory for s in dataset.system_manager.server.values()]))
@@ -59,7 +59,7 @@ if __name__=="__main__":
     parser.add_argument("--num_servers", type=int, default=2, help="_")
     parser.add_argument("--bandwidth_ratio", type=float, default=1.0, help="_")
     parser.add_argument("--partitioning", type=str, choices=["Piecewise", "Layerwise"], default="Layerwise", help="_")
-    parser.add_argument("--offloading", type=str, choices=["Local", "Edge", "HEFT", "CPOP", "PEFT", "Greedy", "PSOGA", "Genetic", "MemeticPSOGA", "MemeticGenetic", "SAC"], default="Local", help="_")
+    parser.add_argument("--offloading", type=str, choices=["Local", "Edge", "HEFT", "CPOP", "PEFT", "Greedy", "E_HEFT", "PSOGA", "Genetic", "MemeticPSOGA", "MemeticGenetic", "SAC"], default="Local", help="_")
     parser.add_argument("--iteration", type=int, default=1, help="_")
     args = parser.parse_args()
 
@@ -130,6 +130,11 @@ if __name__=="__main__":
         algorithm = Greedy(dataset=dataset)
         algorithm_parameter = { }
         # algorithm.rank = "rank_oct"
+        algorithm.rank = "rank_u"
+        dataset.system_manager.scheduling_policy = "rank_u"
+    elif args.offloading == "E_HEFT":
+        algorithm = E_HEFT(dataset=dataset)
+        algorithm_parameter = { }
         algorithm.rank = "rank_u"
         dataset.system_manager.scheduling_policy = "rank_u"
     elif args.partitioning == "Piecewise" and args.offloading == "MemeticPSOGA":

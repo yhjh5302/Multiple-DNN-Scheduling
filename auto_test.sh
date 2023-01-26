@@ -18,6 +18,7 @@ for servers in 6
       # python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Piecewise" --offloading="CPOP" --iteration=1;
       # python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Piecewise" --offloading="PEFT" --iteration=1;
       python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Piecewise" --offloading="Greedy" --iteration=1;
+      python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Piecewise" --offloading="E_HEFT" --iteration=1;
       # python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Piecewise" --offloading="PSOGA" --iteration=10;
       # python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Piecewise" --offloading="Genetic" --iteration=10;
       # python3 main.py --num_servers=$servers --num_services=$services --bandwidth_ratio=1.0 --partitioning="Piecewise" --offloading="MemeticPSOGA" --iteration=10;

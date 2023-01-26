@@ -407,7 +407,7 @@ class DAGDataSet:
 
         # create network manager
         if net_manager == None:
-            net_manager = NetworkManager(channel_bandwidth=1024*1024*100/8, gaussian_noise=1, B_edge_up=1024*1024*100/8, B_edge_down=1024*1024*100/8, B_cloud_up=1024*1024*1024, B_cloud_down=1024*1024*1024, request=request, local=local, edge=edge, cloud=cloud)
+            net_manager = NetworkManager(channel_bandwidth=1024*1024*100, gaussian_noise=1, B_edge_up=1024*1024*100, B_edge_down=1024*1024*100, B_cloud_up=1024*1024*1024, B_cloud_down=1024*1024*1024, request=request, local=local, edge=edge, cloud=cloud)
             net_manager.P_d = np.ones(shape=(self.num_servers,))
             net_manager.g_dd = np.zeros(shape=(self.num_servers, self.num_servers))
             for i in range(self.num_servers):
