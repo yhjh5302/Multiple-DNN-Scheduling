@@ -58,8 +58,8 @@ def data_generator(args, send_data_list, send_data_lock):
         # send image info to the master and recv scheduling decision
         send_request()
         with send_data_lock:
-            send_data_list.append(transform(boxedFrame).unsqueeze(0))
-        time.sleep(60)
+            send_data_list.append((-1, num_pieces, transform(boxedFrame).unsqueeze(0)))
+        time.sleep(300)
 
         if cv2.waitKey(delay) == ord('q'):
             break
@@ -105,10 +105,10 @@ if __name__ == "__main__":
     send_data_lock = threading.Lock()
     internal_data_list = []
     internal_data_lock = threading.Lock()
-    recv_schedule_list = []
-    recv_schedule_lock = threading.Lock()
     send_schedule_list = []
     send_schedule_lock = threading.Lock()
+    recv_schedule_list = []
+    recv_schedule_lock = threading.Lock()
     proc_schedule_list = []
     proc_schedule_lock = threading.Lock()
 
@@ -118,7 +118,8 @@ if __name__ == "__main__":
     threading.Thread(target=send_thread, args=(args.rank, send_schedule_list, send_schedule_lock, send_data_list, send_data_lock, recv_data_queue, recv_data_lock, internal_data_list, internal_data_lock, _stop_event)).start()
 
     while _stop_event.is_set() == False:
-        inputs, i = bring_data(recv_data_queue, recv_data_lock, proc_schedule_list, proc_schedule_lock, _stop_event)
-        outputs = model(inputs, i)
+        inputs, layer_id, p_id, num_outputs = bring_data(recv_data_queue, recv_data_lock, proc_schedule_list, proc_schedule_lock, _stop_event)
+        outputs = model(inputs, layer_id)
+        print("processing_done", outputs.shape)
         with send_data_lock:
-            send_data_list.append((i, outputs))
+            send_data_list.append((p_id, num_outputs, outputs))
