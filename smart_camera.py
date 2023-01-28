@@ -4,7 +4,7 @@ import cv2, logging
 
 
 
-def data_generator(args, data_list, data_lock):
+def data_generator(args, send_data_list, send_data_lock):
     # video data load
     vid = cv2.VideoCapture(args.data_path+args.video_name)
     fps = vid.get(cv2.CAP_PROP_FPS)
@@ -57,8 +57,8 @@ def data_generator(args, data_list, data_lock):
 
         # send image info to the master and recv scheduling decision
         send_request()
-        with data_lock:
-            data_list.append(transform(boxedFrame).unsqueeze(0))
+        with send_data_lock:
+            send_data_list.append(transform(boxedFrame).unsqueeze(0))
         time.sleep(60)
 
         if cv2.waitKey(delay) == ord('q'):
@@ -99,26 +99,26 @@ if __name__ == "__main__":
 
     # data sender/receiver thread start
     _stop_event = threading.Event()
-    recv_data_list = []
+    recv_data_queue = queue.PriorityQueue()
     recv_data_lock = threading.Lock()
     send_data_list = []
     send_data_lock = threading.Lock()
+    internal_data_list = []
+    internal_data_lock = threading.Lock()
     recv_schedule_list = []
     recv_schedule_lock = threading.Lock()
     send_schedule_list = []
     send_schedule_lock = threading.Lock()
     proc_schedule_list = []
     proc_schedule_lock = threading.Lock()
-    internal_data_list = dict()
-    internal_data_lock = threading.Lock()
 
     threading.Thread(target=data_generator, args=(args, send_data_list, send_data_lock)).start()
     threading.Thread(target=recv_schedule_thread, args=(recv_schedule_list, recv_schedule_lock, send_schedule_list, send_schedule_lock, proc_schedule_list, proc_schedule_lock, _stop_event)).start()
-    threading.Thread(target=recv_thread, args=(args.rank, recv_schedule_list, recv_schedule_lock, recv_data_list, recv_data_lock, internal_data_list, internal_data_lock, _stop_event)).start()
-    threading.Thread(target=send_thread, args=(args.rank, send_schedule_list, send_schedule_lock, send_data_list, send_data_lock, internal_data_list, internal_data_lock, _stop_event)).start()
+    threading.Thread(target=recv_thread, args=(args.rank, recv_schedule_list, recv_schedule_lock, recv_data_queue, recv_data_lock, internal_data_list, internal_data_lock, _stop_event)).start()
+    threading.Thread(target=send_thread, args=(args.rank, send_schedule_list, send_schedule_lock, send_data_list, send_data_lock, recv_data_queue, recv_data_lock, internal_data_list, internal_data_lock, _stop_event)).start()
 
     while _stop_event.is_set() == False:
-        inputs = bring_data(recv_data_list, recv_data_lock, _stop_event)
-        outputs = processing(model, inputs, proc_schedule_list, proc_schedule_lock, _stop_event)
+        inputs, i = bring_data(recv_data_queue, recv_data_lock, proc_schedule_list, proc_schedule_lock, _stop_event)
+        outputs = model(inputs, i)
         with send_data_lock:
-            send_data_list.append(outputs)
+            send_data_list.append((i, outputs))
