@@ -12,9 +12,10 @@ def data_generator(args, send_data_list, send_data_lock):
     roi_mask = cv2.imread(args.data_path+args.roi_name, cv2.IMREAD_UNCHANGED)
     roi_mask = cv2.resize(roi_mask, args.resolution, interpolation=cv2.INTER_CUBIC)
 
+    p_tag = 1
     kernel = None
     backgroundObject = cv2.createBackgroundSubtractorMOG2(history=1000, varThreshold=128, detectShadows=False)
-    transform = transforms.Compose([transforms.ToTensor(), transforms.Resize(size=(224,224),interpolation=0), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+    transform = transforms.Compose([transforms.ToTensor(), transforms.Resize(size=(227,227),interpolation=0), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     while vid.isOpened():
         _, frame = vid.read()
 
@@ -58,9 +59,9 @@ def data_generator(args, send_data_list, send_data_lock):
         # send image info to the master and recv scheduling decision
         send_request()
         with send_data_lock:
-            send_data_list.append((-1, num_pieces, transform(boxedFrame).unsqueeze(0)))
-            print(send_data_list[-1][2].shape)
-        time.sleep(300)
+            send_data_list.append((p_tag-1, num_pieces, transform(boxedFrame).unsqueeze(0)))
+            p_tag += num_partitions + 3
+        time.sleep(1)
 
         if cv2.waitKey(delay) == ord('q'):
             break
@@ -90,7 +91,7 @@ if __name__ == "__main__":
     print(device, torch.cuda.get_device_name(0))
 
     # model loading
-    model = AlexNet().eval()
+    model = AlexNet().cuda().eval()
 
     # cluster connection setup
     print('Waiting for the cluster connection...')
@@ -120,7 +121,7 @@ if __name__ == "__main__":
 
     while _stop_event.is_set() == False:
         inputs, layer_id, p_id, num_outputs = bring_data(recv_data_queue, recv_data_lock, proc_schedule_list, proc_schedule_lock, _stop_event)
-        outputs = model(inputs, layer_id)
-        print("processing_done", outputs.shape)
+        outputs = model(inputs.cuda(), layer_id.cuda()).cpu()
+        print(":::::outputs", outputs.shape, layer_id)
         with send_data_lock:
             send_data_list.append((p_id, num_outputs, outputs))

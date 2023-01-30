@@ -16,8 +16,8 @@ def scheduler(recv_schedule_list, recv_schedule_lock, send_schedule_list, send_s
     algorithm.rank = "rank_d"
     algorithm.server_lst = list(dataset.system_manager.request.keys())[:num_servers] + list(dataset.system_manager.edge.keys())
 
-    tag = 0
-    p_tag = 0
+    tag = 1
+    p_tag = 1
     partitions = dataset.system_manager.service_set.partitions
     while _stop_event.is_set() == False:
         # request를 반복적으로 받음
@@ -40,9 +40,9 @@ def scheduler(recv_schedule_list, recv_schedule_lock, send_schedule_list, send_s
                 else:
                     src = server_mapping[server[next(i for i, l in enumerate(partitions) if l.layer_name == pred)]]
                     pred_id = next(i for i, l in enumerate(partitions) if l.layer_name == pred)
-                print("pred_id", pred_id, p_id)
                 dst = server_mapping[server[p_id]]
                 schedule = torch.tensor([dataset.partition_layer_map[p_id], len(p.input_slicing), len(p.successors), p_tag+pred_id, p_tag+p_id, src, dst, p.input_height, p.input_width, p.input_channel, slicing_index[0], slicing_index[1], tag, proc_flag], dtype=torch.int32)
+                # print("schedule", schedule, pred_id, p_id)
                 # dst는 데이터를 받는 역할을 함
                 # 데이터의 dst에 스케줄 보냄
                 if dst == 0:
@@ -71,7 +71,7 @@ def scheduler(recv_schedule_list, recv_schedule_lock, send_schedule_list, send_s
 
                 del schedule
                 tag += 1
-        p_tag += len(order)
+        p_tag += num_partitions + 3
         print("scheduling took", time.time() - start)
 
 
@@ -96,7 +96,7 @@ if __name__ == "__main__":
     print(device, torch.cuda.get_device_name(0))
 
     # model loading
-    model = AlexNet().eval()
+    model = AlexNet().cuda().eval()
 
     # cluster connection setup
     print('Waiting for the cluster connection...')
@@ -125,7 +125,7 @@ if __name__ == "__main__":
 
     while _stop_event.is_set() == False:
         inputs, layer_id, p_id, num_outputs = bring_data(recv_data_queue, recv_data_lock, proc_schedule_list, proc_schedule_lock, _stop_event)
-        outputs = model(inputs, layer_id)
-        print("processing_done", outputs.shape)
+        outputs = model(inputs.cuda(), layer_id.cuda()).cpu()
+        print(":::::outputs", outputs.shape, layer_id, num_outputs)
         with send_data_lock:
             send_data_list.append((p_id, num_outputs, outputs))
