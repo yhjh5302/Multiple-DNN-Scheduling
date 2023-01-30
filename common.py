@@ -86,12 +86,16 @@ def send_thread(rank, send_schedule_list, send_schedule_lock, send_data_list, se
             with send_data_lock:
                 pred_id, num_outputs, outputs = send_data_list.pop(0)
             for i in range(num_outputs):
+                idx = None
                 while True:
-                    try:
-                        idx = next(i for i, s in enumerate(send_schedule_list) if s[3].item() == pred_id)
-                        print("(send_thread) send", s)
+                    for i, s in enumerate(send_schedule_list):
+                        if s[3].item() == pred_id:
+                            idx = i
+                            print("(send_thread) send", s)
+                            break
+                    if idx != None:
                         break
-                    except:
+                    else:
                         print("(send_thread) waiting", len(send_schedule_list), pred_id)
                         time.sleep(5) # wait for data recv
                 # send_schedule중에 pred_id가 동일한거만 꺼냄
