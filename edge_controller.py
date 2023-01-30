@@ -13,6 +13,7 @@ def scheduler(recv_schedule_list, recv_schedule_lock, send_schedule_list, send_s
     dataset = DAGDataSet(num_timeslots=1, num_services=1, net_manager=net_manager, apply_partition="horizontal", graph_coarsening=True)
     num_servers = 1
     algorithm = Greedy(dataset=dataset)
+    algorithm.rank = "rank_d"
     algorithm.server_lst = list(dataset.system_manager.request.keys())[:num_servers] + list(dataset.system_manager.edge.keys())
 
     tag = 0
@@ -39,6 +40,7 @@ def scheduler(recv_schedule_list, recv_schedule_lock, send_schedule_list, send_s
                 else:
                     src = server_mapping[server[next(i for i, l in enumerate(partitions) if l.layer_name == pred)]]
                     pred_id = next(i for i, l in enumerate(partitions) if l.layer_name == pred)
+                print("pred_id", pred_id, p_id)
                 dst = server_mapping[server[p_id]]
                 schedule = torch.tensor([dataset.partition_layer_map[p_id], len(p.input_slicing), len(p.successors), p_tag+pred_id, p_tag+p_id, src, dst, p.input_height, p.input_width, p.input_channel, slicing_index[0], slicing_index[1], tag, proc_flag], dtype=torch.int32)
                 # dst는 데이터를 받는 역할을 함
@@ -69,7 +71,7 @@ def scheduler(recv_schedule_list, recv_schedule_lock, send_schedule_list, send_s
 
                 del schedule
                 tag += 1
-            p_tag += 1
+        p_tag += len(order)
         print("scheduling took", time.time() - start)
 
 

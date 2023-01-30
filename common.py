@@ -27,7 +27,7 @@ def bring_data(recv_data_queue, recv_data_lock, proc_schedule_list, proc_schedul
             layer_id = proc_schedule[0]
             num_inputs = proc_schedule[1]
             num_outputs = proc_schedule[2]
-            p_id = proc_schedule[4]
+            pred_id = proc_schedule[3]
             start_tag = proc_schedule[12]
             data_list = []
             time.sleep(1)
@@ -43,9 +43,9 @@ def bring_data(recv_data_queue, recv_data_lock, proc_schedule_list, proc_schedul
                 data_list.append(data)
                 print("(bring data)", tag, "wait")
                 if job != None:
-                    job.wait()
+                    job.join()
             print(torch.cat(data_list).shape)
-            return torch.cat(data_list), layer_id, p_id, num_outputs
+            return torch.cat(data_list), layer_id, pred_id, num_outputs
         else:
             time.sleep(0.000001) # wait for data recv
 
@@ -72,7 +72,8 @@ def recv_thread(rank, recv_schedule_list, recv_schedule_lock, recv_data_queue, r
                     print("(recv_thread) ", tag, data.shape, None)
             else:
                 with recv_data_lock:
-                    job = dist.irecv(tensor=data, src=src, tag=tag)
+                    job = threading.Thread(target=dist.recv, kwargs={"tensor":data, "src":src, "tag":tag})
+                    job.start()
                     recv_data_queue.put([tag, data, job])
                     print("(recv_thread) ", tag, data.shape)
             print("recv_thread recv_data_lock done")
@@ -83,17 +84,17 @@ def send_thread(rank, send_schedule_list, send_schedule_lock, send_data_list, se
     while _stop_event.is_set() == False:
         if len(send_data_list) > 0:
             with send_data_lock:
-                p_id, num_outputs, outputs = send_data_list.pop(0)
+                pred_id, num_outputs, outputs = send_data_list.pop(0)
             for i in range(num_outputs):
                 while True:
                     try:
-                        idx = next(i for i, s in enumerate(send_schedule_list) if s[4] == p_id)
+                        idx = next(i for i, s in enumerate(send_schedule_list) if s[3].item() == pred_id)
+                        print("(send_thread) send", s)
                         break
                     except:
-                        print("waiting", send_schedule_list)
+                        print("(send_thread) waiting", len(send_schedule_list), pred_id)
                         time.sleep(5) # wait for data recv
-                print("send")
-                # send_schedule중에 p_id가 동일한거만 꺼냄
+                # send_schedule중에 pred_id가 동일한거만 꺼냄
                 with send_schedule_lock:
                     schedule = send_schedule_list.pop(idx)
                 dst = schedule[6].item()
@@ -106,7 +107,7 @@ def send_thread(rank, send_schedule_list, send_schedule_lock, send_data_list, se
                         internal_data_list.append((tag, data))
                         print("(send_thread) ", tag, data.shape)
                 else:
-                    dist.isend(tensor=data, dst=dst, tag=tag)
+                    threading.Thread(target=dist.send, kwargs={"tensor":data, "dst":dst, "tag":tag}).start()
         else:
             time.sleep(0.000001) # wait for data recv
 
