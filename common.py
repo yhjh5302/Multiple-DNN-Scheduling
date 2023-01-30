@@ -24,11 +24,11 @@ def bring_data(recv_data_queue, recv_data_lock, proc_schedule_list, proc_schedul
         if len(proc_schedule_list) > 0:
             with proc_schedule_lock:
                 proc_schedule = proc_schedule_list.pop(0)
-            layer_id = proc_schedule[0]
-            num_inputs = proc_schedule[1]
-            num_outputs = proc_schedule[2]
-            pred_id = proc_schedule[3]
-            start_tag = proc_schedule[12]
+            layer_id = proc_schedule[0].item()
+            num_inputs = proc_schedule[1].item()
+            num_outputs = proc_schedule[2].item()
+            p_id = proc_schedule[4].item()
+            start_tag = proc_schedule[12].item()
             data_list = []
             time.sleep(1)
             print("(bring data) num_inputs", num_inputs, layer_id, start_tag)
@@ -45,7 +45,7 @@ def bring_data(recv_data_queue, recv_data_lock, proc_schedule_list, proc_schedul
                 if job != None:
                     job.join()
             print(torch.cat(data_list).shape)
-            return torch.cat(data_list), layer_id, pred_id, num_outputs
+            return torch.cat(data_list), layer_id, p_id, num_outputs
         else:
             time.sleep(0.000001) # wait for data recv
 
@@ -96,7 +96,7 @@ def send_thread(rank, send_schedule_list, send_schedule_lock, send_data_list, se
                     if idx != None:
                         break
                     else:
-                        print("(send_thread) waiting", len(send_schedule_list), pred_id)
+                        print("(send_thread) waiting", len(send_schedule_list), pred_id, outputs.shape)
                         time.sleep(5) # wait for data recv
                 # send_schedule중에 pred_id가 동일한거만 꺼냄
                 with send_schedule_lock:
