@@ -59,6 +59,7 @@ def data_generator(args, send_data_list, send_data_lock):
         send_request()
         with send_data_lock:
             send_data_list.append((-1, num_pieces, transform(boxedFrame).unsqueeze(0)))
+            print(send_data_list[-1][2].shape)
         time.sleep(300)
 
         if cv2.waitKey(delay) == ord('q'):

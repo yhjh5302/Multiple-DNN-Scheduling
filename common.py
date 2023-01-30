@@ -104,7 +104,7 @@ def send_thread(rank, send_schedule_list, send_schedule_lock, send_data_list, se
                 dst = schedule[6].item()
                 tag = schedule[12].item()
                 slicing_index = (schedule[10].item(), schedule[11].item())
-                data = outputs[:,:,:,slicing_index[0]:slicing_index[1]+1].contiguous()
+                data = outputs[:,:,:,slicing_index[0]:slicing_index[1]].contiguous()
                 print("(send_thread) ", data.shape, tag, dst)
                 if dst == rank: # send/isend는 자기자신에게 보낼경우 segfault남.
                     with internal_data_lock:
