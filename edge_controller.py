@@ -4,7 +4,7 @@ from dag_data_generator import DAGDataSet
 from algorithms.Greedy import HEFT, Greedy
 
 
-server_mapping = {0: 1, 1: 0}
+server_mapping = {0: 2, 1: 1, 2: 0}
 
 
 def scheduler(recv_schedule_list, recv_schedule_lock, send_schedule_list, send_schedule_lock, proc_schedule_list, proc_schedule_lock, _stop_event):
@@ -21,7 +21,7 @@ def scheduler(recv_schedule_list, recv_schedule_lock, send_schedule_list, send_s
     partitions = dataset.system_manager.service_set.partitions
     while _stop_event.is_set() == False:
         # request를 반복적으로 받음
-        input_src = recv_request()
+        input_src = recv_request(p_tag)
         # scheduling 수행
         (([server], [order]), [latency], took) = algorithm.run_algo()
         # partition p를 순서대로
@@ -84,19 +84,19 @@ if __name__ == "__main__":
     parser.add_argument('--data_path', default='./Data/', type=str, help='Image frame data path')
     parser.add_argument('--video_name', default='vdo.avi', type=str, help='Video file name')
     parser.add_argument('--roi_name', default='roi.jpg', type=str, help='RoI file name')
-    parser.add_argument('--num_nodes', default=2, type=int, help='Number of nodes')
+    parser.add_argument('--num_nodes', default=3, type=int, help='Number of nodes')
     parser.add_argument('--resolution', default=(854, 480), type=tuple, help='Image resolution')
     parser.add_argument('--verbose', default=False, type=str2bool, help='If you want to print debug messages, set True')
     args = parser.parse_args()
 
     # gpu setting
     # torch.backends.cudnn.benchmark = True
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    torch.cuda.set_per_process_memory_fraction(fraction=args.vram_limit, device=device)
-    print(device, torch.cuda.get_device_name(0))
+    # device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    # torch.cuda.set_per_process_memory_fraction(fraction=args.vram_limit, device=device)
+    # print(device, torch.cuda.get_device_name(0))
 
     # model loading
-    model = AlexNet().cuda().eval()
+    model = AlexNet().eval()
 
     # cluster connection setup
     print('Waiting for the cluster connection...')
@@ -125,7 +125,7 @@ if __name__ == "__main__":
 
     while _stop_event.is_set() == False:
         inputs, layer_id, p_id, num_outputs = bring_data(recv_data_queue, recv_data_lock, proc_schedule_list, proc_schedule_lock, _stop_event)
-        outputs = model(inputs.cuda(), layer_id.cuda()).cpu()
+        outputs = model(inputs, layer_id)
         print(":::::outputs", outputs.shape, layer_id, num_outputs)
         with send_data_lock:
             send_data_list.append((p_id, num_outputs, outputs))

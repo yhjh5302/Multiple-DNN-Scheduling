@@ -12,7 +12,6 @@ def data_generator(args, send_data_list, send_data_lock):
     roi_mask = cv2.imread(args.data_path+args.roi_name, cv2.IMREAD_UNCHANGED)
     roi_mask = cv2.resize(roi_mask, args.resolution, interpolation=cv2.INTER_CUBIC)
 
-    p_tag = 1
     kernel = None
     backgroundObject = cv2.createBackgroundSubtractorMOG2(history=1000, varThreshold=128, detectShadows=False)
     transform = transforms.Compose([transforms.ToTensor(), transforms.Resize(size=(227,227),interpolation=0), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
@@ -57,11 +56,11 @@ def data_generator(args, send_data_list, send_data_lock):
             cv2.imshow('boxedFrame', boxedFrame)
 
         # send image info to the master and recv scheduling decision
-        send_request()
+        p_tag = send_request()
         with send_data_lock:
             send_data_list.append((p_tag-1, num_pieces, transform(boxedFrame).unsqueeze(0)))
             p_tag += num_partitions + 3
-        time.sleep(1)
+        time.sleep(2)
 
         if cv2.waitKey(delay) == ord('q'):
             break
@@ -79,19 +78,19 @@ if __name__ == "__main__":
     parser.add_argument('--data_path', default='/home/jin/git/DNN/Data/AIC22_Track1_MTMC_Tracking/train/S03/c011/', type=str, help='Image frame data path')
     parser.add_argument('--video_name', default='vdo.avi', type=str, help='Video file name')
     parser.add_argument('--roi_name', default='roi.jpg', type=str, help='RoI file name')
-    parser.add_argument('--num_nodes', default=2, type=int, help='Number of nodes')
+    parser.add_argument('--num_nodes', default=3, type=int, help='Number of nodes')
     parser.add_argument('--resolution', default=(854, 480), type=tuple, help='Image resolution')
     parser.add_argument('--verbose', default=False, type=str2bool, help='If you want to print debug messages, set True')
     args = parser.parse_args()
 
     # gpu setting
     # torch.backends.cudnn.benchmark = True
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    torch.cuda.set_per_process_memory_fraction(fraction=args.vram_limit, device=device)
-    print(device, torch.cuda.get_device_name(0))
+    # device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    # torch.cuda.set_per_process_memory_fraction(fraction=args.vram_limit, device=device)
+    # print(device, torch.cuda.get_device_name(0))
 
     # model loading
-    model = AlexNet().cuda().eval()
+    model = AlexNet().eval()
 
     # cluster connection setup
     print('Waiting for the cluster connection...')
@@ -121,7 +120,7 @@ if __name__ == "__main__":
 
     while _stop_event.is_set() == False:
         inputs, layer_id, p_id, num_outputs = bring_data(recv_data_queue, recv_data_lock, proc_schedule_list, proc_schedule_lock, _stop_event)
-        outputs = model(inputs.cuda(), layer_id.cuda()).cpu()
+        outputs = model(inputs, layer_id)
         print(":::::outputs", outputs.shape, layer_id)
         with send_data_lock:
             send_data_list.append((p_id, num_outputs, outputs))
