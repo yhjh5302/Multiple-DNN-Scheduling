@@ -8,9 +8,9 @@ def scheduler(recv_schedule_list, recv_schedule_lock, send_schedule_list, send_s
     with open("outputs/net_manager_backup", "rb") as fp:
         net_manager = pickle.load(fp)
     dataset = DAGDataSet(num_timeslots=1, num_services=1, net_manager=net_manager, apply_partition="horizontal", graph_coarsening=True)
-    num_servers = 1
-    algorithm = Greedy(dataset=dataset)
-    algorithm.rank = "rank_d"
+    num_servers = 4
+    algorithm = HEFT(dataset=dataset)
+    algorithm.rank = "rank_u"
     algorithm.server_lst = list(dataset.system_manager.request.keys())[:num_servers] + list(dataset.system_manager.edge.keys())
 
     tag = 1
@@ -82,7 +82,7 @@ if __name__ == "__main__":
     parser.add_argument('--data_path', default='./Data/', type=str, help='Image frame data path')
     parser.add_argument('--video_name', default='vdo.avi', type=str, help='Video file name')
     parser.add_argument('--roi_name', default='roi.jpg', type=str, help='RoI file name')
-    parser.add_argument('--num_nodes', default=4, type=int, help='Number of nodes')
+    parser.add_argument('--num_nodes', default=5, type=int, help='Number of nodes')
     parser.add_argument('--resolution', default=(854, 480), type=tuple, help='Image resolution')
     parser.add_argument('--verbose', default=False, type=str2bool, help='If you want to print debug messages, set True')
     args = parser.parse_args()
