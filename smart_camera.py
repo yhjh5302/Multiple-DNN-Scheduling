@@ -78,7 +78,7 @@ if __name__ == "__main__":
     parser.add_argument('--data_path', default='/home/jin/git/DNN/Data/AIC22_Track1_MTMC_Tracking/train/S03/c011/', type=str, help='Image frame data path')
     parser.add_argument('--video_name', default='vdo.avi', type=str, help='Video file name')
     parser.add_argument('--roi_name', default='roi.jpg', type=str, help='RoI file name')
-    parser.add_argument('--num_nodes', default=3, type=int, help='Number of nodes')
+    parser.add_argument('--num_nodes', default=4, type=int, help='Number of nodes')
     parser.add_argument('--resolution', default=(854, 480), type=tuple, help='Image resolution')
     parser.add_argument('--verbose', default=False, type=str2bool, help='If you want to print debug messages, set True')
     args = parser.parse_args()

@@ -4,9 +4,6 @@ from dag_data_generator import DAGDataSet
 from algorithms.Greedy import HEFT, Greedy
 
 
-server_mapping = {0: 2, 1: 1, 2: 0}
-
-
 def scheduler(recv_schedule_list, recv_schedule_lock, send_schedule_list, send_schedule_lock, proc_schedule_list, proc_schedule_lock, _stop_event):
     with open("outputs/net_manager_backup", "rb") as fp:
         net_manager = pickle.load(fp)
@@ -38,9 +35,9 @@ def scheduler(recv_schedule_list, recv_schedule_lock, send_schedule_list, send_s
                     src = input_src
                     pred_id = -1
                 else:
-                    src = server_mapping[server[next(i for i, l in enumerate(partitions) if l.layer_name == pred)]]
+                    src = server[next(i for i, l in enumerate(partitions) if l.layer_name == pred)]
                     pred_id = next(i for i, l in enumerate(partitions) if l.layer_name == pred)
-                dst = server_mapping[server[p_id]]
+                dst = server[p_id]
                 schedule = torch.tensor([dataset.partition_layer_map[p_id], len(p.input_slicing), len(p.successors), p_tag+pred_id, p_tag+p_id, src, dst, p.input_height, p.input_width, p.input_channel, slicing_index[0], slicing_index[1], tag, proc_flag], dtype=torch.int32)
                 # print("schedule", schedule, pred_id, p_id)
                 # dst는 데이터를 받는 역할을 함
@@ -84,7 +81,7 @@ if __name__ == "__main__":
     parser.add_argument('--data_path', default='./Data/', type=str, help='Image frame data path')
     parser.add_argument('--video_name', default='vdo.avi', type=str, help='Video file name')
     parser.add_argument('--roi_name', default='roi.jpg', type=str, help='RoI file name')
-    parser.add_argument('--num_nodes', default=3, type=int, help='Number of nodes')
+    parser.add_argument('--num_nodes', default=4, type=int, help='Number of nodes')
     parser.add_argument('--resolution', default=(854, 480), type=tuple, help='Image resolution')
     parser.add_argument('--verbose', default=False, type=str2bool, help='If you want to print debug messages, set True')
     args = parser.parse_args()

@@ -36,6 +36,17 @@ request_device_info = [
         'max_energy_consumption':15,
         'is_request_device':True,
     },
+    {
+        'device_name':'Jetson TX2',
+        'computing_intensity':[301, 772, 300, 301, 772, 300, 301, 772, 300, 301, 772, 300, 301, 772, 300], # AlexNet, GoogLeNet, ResNet-50
+        'computing_frequency':2 * (10**12),
+        'memory':8 * 1024 * 1024 * 1024, # Byte
+        'max_energy':30,
+        'cur_energy':30,
+        'min_energy_consumption':7.5,
+        'max_energy_consumption':15,
+        'is_request_device':True,
+    },
 ]
 
 local_device_info = [

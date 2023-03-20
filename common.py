@@ -143,7 +143,7 @@ def send_schedule(schedule, dst):
 # smart cameras
 def send_request():
     request = torch.empty(len(schedule_shape), dtype=torch.int32)
-    dist.send(tensor=request, dst=0, tag=SCHEDULE_TAG)
+    dist.send(tensor=request, dst=0, tag=SCHEDULE_TAG_2)
     p_tag = torch.empty(2, dtype=torch.int32)
     dist.recv(tensor=p_tag, src=0, tag=SCHEDULE_TAG_2)
     print("p_tag", p_tag[0].item())
@@ -152,7 +152,7 @@ def send_request():
 # edge server
 def recv_request(p_tag):
     request = torch.empty(len(schedule_shape), dtype=torch.int32)
-    src = dist.recv(tensor=request, src=None, tag=SCHEDULE_TAG)
+    src = dist.recv(tensor=request, src=None, tag=SCHEDULE_TAG_2)
     tag_tensor = torch.empty(2, dtype=torch.int32)
     tag_tensor[0] = p_tag
     dist.send(tensor=tag_tensor, dst=src, tag=SCHEDULE_TAG_2)
