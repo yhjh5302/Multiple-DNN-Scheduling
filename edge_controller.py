@@ -88,10 +88,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # gpu setting
-    # torch.backends.cudnn.benchmark = True
-    # device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    # torch.cuda.set_per_process_memory_fraction(fraction=args.vram_limit, device=device)
-    # print(device, torch.cuda.get_device_name(0))
+    torch.backends.cudnn.benchmark = True
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    torch.cuda.set_per_process_memory_fraction(fraction=args.vram_limit, device=device)
+    print(device, torch.cuda.get_device_name(0))
 
     # model loading
     model = AlexNet().eval()
