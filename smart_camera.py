@@ -99,7 +99,7 @@ if __name__ == "__main__":
     print('Waiting for the cluster connection...')
     os.environ['MASTER_ADDR'] = args.master_addr
     os.environ['MASTER_PORT'] = args.master_port
-    dist.init_process_group('gloo', rank=args.rank, world_size=args.num_nodes)
+    dist.init_process_group(backend='gloo', rank=args.rank, world_size=args.num_nodes)
 
     # data sender/receiver thread start
     _stop_event = threading.Event()
