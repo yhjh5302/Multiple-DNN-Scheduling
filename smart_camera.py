@@ -10,7 +10,7 @@ def data_generator(args, send_data_queue, send_data_lock):
     fps = vid.get(cv2.CAP_PROP_FPS)
     delay = 10000 # int(600/fps)
     roi_mask = cv2.imread(args.data_path+args.roi_name, cv2.IMREAD_UNCHANGED)
-    print(roi_mask.shape())
+    print(roi_mask.shape()) 
     roi_mask = cv2.resize(roi_mask, args.resolution, interpolation=cv2.INTER_CUBIC)
 
     kernel = None
