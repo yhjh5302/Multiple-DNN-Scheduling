@@ -10,6 +10,7 @@ def data_generator(args, send_data_queue, send_data_lock):
     fps = vid.get(cv2.CAP_PROP_FPS)
     delay = 10000 # int(600/fps)
     roi_mask = cv2.imread(args.data_path+args.roi_name, cv2.IMREAD_UNCHANGED)
+    print(roi_mask.shape()) 
     roi_mask = cv2.resize(roi_mask, args.resolution, interpolation=cv2.INTER_CUBIC)
 
     kernel = None
@@ -78,7 +79,7 @@ if __name__ == "__main__":
     parser.add_argument('--master_addr', default='localhost', type=str, help='Master node ip address')
     parser.add_argument('--master_port', default='30000', type=str, help='Master node port')
     parser.add_argument('--rank', default=0, type=int, help='Master node port', required=True)
-    parser.add_argument('--data_path', default='/home/jin/git/DNN/Data/AIC22_Track1_MTMC_Tracking/train/S03/c011/', type=str, help='Image frame data path')
+    parser.add_argument('--data_path', default='./', type=str, help='Image frame data path')
     parser.add_argument('--video_name', default='vdo.avi', type=str, help='Video file name')
     parser.add_argument('--roi_name', default='roi.jpg', type=str, help='RoI file name')
     parser.add_argument('--num_nodes', default=5, type=int, help='Number of nodes')
@@ -87,10 +88,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # gpu setting
-    # torch.backends.cudnn.benchmark = True
-    # device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    # torch.cuda.set_per_process_memory_fraction(fraction=args.vram_limit, device=device)
-    # print(device, torch.cuda.get_device_name(0))
+    torch.backends.cudnn.benchmark = True
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    torch.cuda.set_per_process_memory_fraction(fraction=args.vram_limit, device=device)
+    print(device, torch.cuda.get_device_name(0))
 
     # model loading
     model = AlexNet().eval()
@@ -99,7 +100,7 @@ if __name__ == "__main__":
     print('Waiting for the cluster connection...')
     os.environ['MASTER_ADDR'] = args.master_addr
     os.environ['MASTER_PORT'] = args.master_port
-    dist.init_process_group('gloo', rank=args.rank, world_size=args.num_nodes)
+    dist.init_process_group(backend='gloo', rank=args.rank, world_size=args.num_nodes)
 
     # data sender/receiver thread start
     _stop_event = threading.Event()

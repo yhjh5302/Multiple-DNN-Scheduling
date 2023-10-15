@@ -79,7 +79,7 @@ if __name__ == "__main__":
     parser.add_argument('--master_addr', default='localhost', type=str, help='Master node ip address')
     parser.add_argument('--master_port', default='30000', type=str, help='Master node port')
     parser.add_argument('--rank', default=0, type=int, help='Master node port', required=True)
-    parser.add_argument('--data_path', default='./Data/', type=str, help='Image frame data path')
+    parser.add_argument('--data_path', default='./', type=str, help='Image frame data path')
     parser.add_argument('--video_name', default='vdo.avi', type=str, help='Video file name')
     parser.add_argument('--roi_name', default='roi.jpg', type=str, help='RoI file name')
     parser.add_argument('--num_nodes', default=5, type=int, help='Number of nodes')
@@ -88,10 +88,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # gpu setting
-    # torch.backends.cudnn.benchmark = True
-    # device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    # torch.cuda.set_per_process_memory_fraction(fraction=args.vram_limit, device=device)
-    # print(device, torch.cuda.get_device_name(0))
+    torch.backends.cudnn.benchmark = True
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    torch.cuda.set_per_process_memory_fraction(fraction=args.vram_limit, device=device)
+    print(device, torch.cuda.get_device_name(0))
 
     # model loading
     model = AlexNet().eval()
